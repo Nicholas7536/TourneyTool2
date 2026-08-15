@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Strikers Tournament Simulator"
+description = "A minimal interactive proof of concept for testing the Steal-a-Player soccer tournament rules, with single tournament playback and batch outcome summaries."
+version = "1.0.0"
+id = "artifacts/strikers-simulator"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21124
+
+[services.development]
+run = "pnpm --filter @workspace/strikers-simulator run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/strikers-simulator", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/strikers-simulator/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21124"
+BASE_PATH = "/"

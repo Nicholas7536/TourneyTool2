@@ -1,0 +1,1000 @@
+Handoff Document — Strikers Club “Steal-a-Player” Tournament PoC
+1. Objective
+
+Build a Python proof-of-concept simulator in Replit for a custom online soccer tournament format.
+
+The simulator's purpose is to test whether the tournament rules produce:
+
+Interesting roster growth/shrinkage
+Lots of eliminations
+Recovery from 2v2
+Teams progressing 3 → 4 → 5
+Multiple possible finalist teams
+Reasonable tournament length
+Edge cases/deadlocks
+Whether 24 players is a good pool size
+Whether the tournament can end with only 1 finalist or preferably 2
+
+The game being modeled is an online soccer game similar to Strikers Club.
+
+Hard game constraint
+
+The custom lobby supports:
+
+Minimum: 4 players = 2v2
+Maximum: 10 players = 5v5
+
+Therefore:
+
+2v2, 3v3, 4v4, and 5v5 are possible.
+
+No 6v6 should be used in the PoC.
+
+2. Core Concept
+
+Everyone starts at 3 players per team.
+
+The tournament is a roster-growth ladder.
+
+A team's size determines its level:
+
+Level	Roster	Match
+Level 0	2	2v2
+Level 1	3	3v3
+Level 2	4	4v4
+Level 3	5	5v5 / finalist
+
+The fundamental mechanic is:
+
+Winner STEALS exactly 1 player from the losing team.
+
+Never borrow.
+
+Never temporarily loan.
+
+The stolen player permanently joins the winner.
+
+The losing team therefore loses one player.
+
+3. Match Transitions
+
+These are the fundamental transitions.
+
+3v3
+3 + 3
+  ↓
+WINNER = 4
+LOSER  = 2
+
+
+So:
+
+3 + 3 → 4 + 2
+
+4v4
+4 + 4
+  ↓
+WINNER = 5
+LOSER  = 3
+
+
+So:
+
+4 + 4 → 5 + 3
+
+The 5-player team becomes a finalist and leaves the active ladder.
+
+2v2
+2 + 2
+  ↓
+WINNER = 3
+LOSER  = 1
+
+
+The remaining 1 player has no team and is:
+
+ELIMINATED.
+
+So the active-player population decreases by 1.
+
+4. Goalkeeper Rule
+
+Original concept:
+
+A player from each team starts as goalkeeper.
+After every goal, both teams rotate their goalkeeper.
+
+The match simulator does not necessarily need to model individual goalkeeper identities initially.
+
+For the first PoC, treat goalkeeper rotation as a match-level rule/metadata item.
+
+The important tournament simulation is roster size and stealing.
+
+5. Starting Population
+
+The primary test case is:
+
+24 players
+
+Everyone starts in groups of 3:
+
+8 teams × 3 players = 24 players
+
+
+Example:
+
+A = 3
+B = 3
+C = 3
+D = 3
+E = 3
+F = 3
+G = 3
+H = 3
+
+
+This is the preferred baseline for testing.
+
+Other useful populations:
+
+15 players
+18 players
+21 players
+24 players
+27 players
+30 players
+
+But 24 should be the primary benchmark.
+
+6. Team Matching Philosophy
+
+The desired default rule is:
+
+Teams normally play another team at the same level.
+
+So:
+
+2 vs 2 → 2v2
+3 vs 3 → 3v3
+4 vs 4 → 4v4
+
+
+A team does not automatically play a larger/smaller team.
+
+Waiting is intentional.
+
+Example:
+
+LEVEL 2
+C = 4
+
+LEVEL 1
+G = 3
+D = 3
+
+LEVEL 0
+H = 2
+
+
+C should WAIT.
+
+G and D play 3v3.
+
+The resulting roster changes may eventually create another 4-player team for C to play.
+
+This is an important part of the intended design.
+
+7. Why Waiting Matters
+
+The tournament is intended to behave like a pipeline:
+
+2v2
+ ↓
+3v3
+ ↓
+4v4
+ ↓
+5v5
+ ↓
+FINALIST
+
+
+Losses flow downward:
+
+5
+ ↓
+4
+ ↓
+3
+ ↓
+2
+ ↓
+ELIMINATION
+
+
+Thus Level 0 acts as a recovery/elimination area.
+
+Example:
+
+2 + 2
+ ↓
+3 + eliminated player
+
+
+The 3-player winner returns to Level 1.
+
+Then it can eventually reach 4 and 5.
+
+This creates the desired comeback path:
+
+2 → 3 → 4 → 5
+
+8. Finalist Rule
+
+Current preferred concept:
+
+When a team reaches 5 players, it has "won" its portion of the tournament and becomes a finalist.
+
+The team:
+
+Locks its 5 players
+Leaves the active ladder
+Cannot continue stealing players
+Waits while the rest of the tournament continues
+
+Preferred final:
+
+First 2 teams to reach 5 become the 2 finalists.
+
+Then:
+
+FINALIST A = 5
+FINALIST B = 5
+
+        ↓
+
+🏆 5v5 GRAND FINAL
+
+
+However:
+
+Exactly 1 finalist is acceptable if everyone else is eventually eliminated before another team reaches 5.
+
+This is an important outcome to test mathematically.
+
+9. Theoretical Finalist Count With 24 Players
+
+Starting population:
+
+24
+
+Maximum possible 5-player teams:
+
+floor(24 / 5) = 4
+
+
+So theoretically:
+
+Maximum = 4 finalist teams
+
+Minimum possible:
+
+1 finalist
+
+if the rest of the population is eliminated.
+
+However, under the preferred tournament rule:
+
+Stop the qualification phase as soon as the second team reaches 5.
+
+Therefore the intended normal outcome is:
+
+2 finalists.
+
+10. Important Mathematical Fact About Eliminations
+
+A Level 0 loss:
+
+2 + 2
+ ↓
+3 + 1
+
+
+causes 1 player to be permanently eliminated.
+
+Therefore if 24 players eventually collapse to one 5-player finalist:
+
+24 - 5 = 19
+
+
+There must be:
+
+19 eliminated players.
+
+This makes the one-finalist scenario mathematically possible.
+
+The simulator should test whether actual legal match sequences can produce it.
+
+11. Critical State Example
+
+A previous simulation produced:
+
+LEVEL 2
+C = 4
+
+LEVEL 1
+G = 3
+D = 3
+
+LEVEL 0
+B = 1 ❌
+F = 1 ❌
+H = 2
+
+
+The 1-player teams are already eliminated.
+
+So actual active state:
+
+C = 4
+G = 3
+D = 3
+H = 2
+
+
+G vs D:
+
+G wins
+
+G: 3 → 4
+D: 3 → 2
+
+
+State:
+
+C = 4
+G = 4
+D = 2
+H = 2
+
+
+C vs G:
+
+C wins
+
+C: 4 → 5 FINALIST
+G: 4 → 3
+
+
+State:
+
+C = 5 FINALIST
+G = 3
+D = 2
+H = 2
+
+
+D vs H:
+
+D wins
+
+D: 2 → 3
+H: 2 → eliminated
+
+
+State:
+
+C = 5 FINALIST
+G = 3
+D = 3
+
+
+G vs D:
+
+D wins
+
+D: 3 → 4
+G: 3 → 2
+
+
+Now:
+
+C = 5 FINALIST
+D = 4
+G = 2
+
+
+This produces a deadlock under strict same-level-only matchmaking.
+
+D has nobody at Level 2.
+
+G has nobody at Level 0.
+
+They cannot interact.
+
+This is one of the most important edge cases for the PoC.
+
+12. Potential Deadlock Solution
+
+The current preferred concept is:
+
+Normal rule
+
+Only same-level teams play.
+
+If no same-level opponent exists:
+
+WAIT.
+
+Emergency fallback
+
+If the entire tournament becomes mathematically stuck, allow the nearest available levels to play.
+
+Example:
+
+D = 4
+G = 2
+
+
+Emergency match:
+
+2v2
+
+D has 4 players but only fields 2.
+
+If D wins:
+
+D: 4 → 5
+G: 2 → eliminated
+
+
+If G wins:
+
+G: 2 → 3
+D: 4 → 3
+
+
+Now:
+
+D = 3
+G = 3
+
+
+and normal 3v3 resumes.
+
+Important
+
+This fallback should NOT be the normal matchmaking system.
+
+It exists specifically to prevent a deadlocked tournament.
+
+13. 24-Player Opening Simulation
+
+This is a very important test.
+
+Start:
+
+A B C D E F G H
+all = 3
+
+
+Pair:
+
+A vs B
+C vs D
+E vs F
+G vs H
+
+
+Suppose the first team in each pair wins.
+
+Result:
+
+A = 4
+C = 4
+E = 4
+G = 4
+
+B = 2
+D = 2
+F = 2
+H = 2
+
+
+State:
+
+4,4,4,4,2,2,2,2
+
+
+The 4-player teams should wait.
+
+The 2-player teams play each other.
+
+For example:
+
+B vs D
+F vs H
+
+
+Suppose B and F win:
+
+B = 3
+D = eliminated
+F = 3
+H = eliminated
+
+
+Now:
+
+4,4,4,4,3,3
+
+
+The 4-player teams still wait.
+
+B and F play 3v3:
+
+B vs F
+
+
+Suppose B wins:
+
+B = 4
+F = 2
+
+
+Now there are:
+
+4,4,4,4,4,2
+
+
+Five 4-player teams.
+
+This is where the simulator should intelligently queue 4v4 matches.
+
+14. Important Observation
+
+If you simply pair same-level teams as quickly as possible, 24 players can reach multiple 5-player teams surprisingly quickly.
+
+For example:
+
+3,3,3,3,3,3,3,3
+        ↓
+4,4,4,4,2,2,2,2
+        ↓
+5,5,3,3,2,2,2,2
+
+
+Therefore the PoC should test different matchmaking policies, not just one.
+
+The purpose is to discover what produces the desired:
+
+Length
+Eliminations
+Comebacks
+Number of finalists
+15. Simulation Requirements
+
+The Python PoC should support:
+
+Teams
+
+Each team should have:
+
+Team:
+    id
+    players
+    level
+    active
+    finalist
+    eliminated
+
+
+Roster size determines level:
+
+level = players - 2
+
+
+So:
+
+2 players → Level 0
+3 players → Level 1
+4 players → Level 2
+5 players → Level 3
+
+16. Match Object
+
+Each match should record:
+
+Match:
+    team_a
+    team_b
+    match_size
+    winner
+    loser
+    players_stolen
+
+
+For normal matches:
+
+2v2
+3v3
+4v4
+
+
+Emergency fallback may have a larger team fielding fewer players.
+
+17. Match Result Simulation
+
+Initially, don't worry about actual soccer scoring.
+
+Use a probability model.
+
+Simplest:
+
+winner = random.choice([team_a, team_b])
+
+
+Better later:
+
+Give teams a hidden skill value.
+
+For example:
+
+skill = random.uniform(0.5, 1.5)
+
+
+Then calculate win probability.
+
+This lets the simulator test:
+
+Purely random tournaments
+Strong teams
+Weak teams
+Skill-balanced teams
+Underdog comebacks
+18. Tournament Loop
+
+Conceptual algorithm:
+
+while tournament_not_finished:
+
+    check_for_finalists()
+
+    if two_finalists_exist:
+        break
+
+    find_same_level_pairs()
+
+    if pairs_exist:
+        play_matches()
+        resolve_steals()
+        eliminate_level_zero_losers()
+        continue
+
+    if tournament_is_stuck:
+        invoke_emergency_matching()
+
+    if no_possible_match_exists:
+        terminate_as_edge_case()
+
+19. Match Resolution
+
+For a normal same-level match:
+
+winner.players += 1
+loser.players -= 1
+
+
+Then:
+
+if loser.players == 1:
+    loser.eliminated = True
+
+
+And:
+
+if winner.players == 5:
+    winner.finalist = True
+    winner.active = False
+
+
+The actual identity of the stolen player should ideally be tracked, even if the first PoC only needs counts.
+
+20. Do NOT Implement This Yet
+
+Avoid overcomplicating the first prototype with:
+
+Actual game API integration
+Player skill matching
+Goalkeeper identities
+Real match timers
+UI
+Discord integration
+Player matchmaking automation
+
+First prove the mathematics.
+
+21. What the PoC Should Output
+
+For every simulated tournament, print something like:
+
+=== TOURNAMENT START ===
+
+Players: 24
+Starting teams: 8
+
+Round 1
+A(3) vs B(3) → A wins
+C(3) vs D(3) → D wins
+...
+
+State:
+A4 B2 C2 D4 E4 F2 G4 H2
+
+Round 2
+B2 vs C2 → B wins
+...
+
+State:
+...
+
+FINALISTS
+1. Team A — 5 players
+2. Team D — 5 players
+
+ELIMINATED PLAYERS: 14
+
+TOTAL MATCHES: 17
+
+22. Run Thousands of Simulations
+
+This is probably the most useful part.
+
+For example:
+
+for i in range(10000):
+    run_tournament(24)
+
+
+Collect:
+
+Average matches
+Median matches
+Min matches
+Max matches
+
+Probability of:
+1 finalist
+2 finalists
+3 finalists
+4 finalists
+
+Average eliminations
+Average time spent at Level 0
+Average time spent waiting
+Number of deadlocks
+Number of emergency matches
+
+
+Example desired output:
+
+24 PLAYER SIMULATION — 10,000 RUNS
+
+1 finalist:       8.4%
+2 finalists:     86.1%
+3 finalists:      5.5%
+
+Average matches:  19.7
+Median matches:   18
+
+Average eliminated: 14.2
+
+Deadlocks:         3.1%
+Emergency matches: 3.1%
+
+
+Those numbers are just examples — the simulator needs to generate the real ones.
+
+23. Questions the Simulation Should Answer
+
+The next agent should specifically investigate:
+
+A. Is 24 players actually optimal?
+
+Compare:
+
+15
+18
+21
+24
+27
+30
+
+B. How often do we get exactly 2 finalists?
+C. How often does only 1 team reach 5?
+D. How many eliminations happen?
+E. How long does the tournament last?
+F. How often does strict same-level matchmaking deadlock?
+G. How often is the emergency cross-level rule needed?
+H. Does allowing waiting make the tournament more interesting?
+I. Which matchmaking policy produces the best tournament?
+24. Matchmaking Policies to Test
+
+At minimum, implement these three:
+
+Policy A — Strict
+
+Only same-level teams can play.
+
+If no opponent:
+
+WAIT.
+
+This is closest to the current intended rules.
+
+Policy B — Strict + Emergency
+
+Same-level matching normally.
+
+If the tournament becomes completely stuck:
+
+nearest-level fallback.
+
+This is currently the most promising ruleset.
+
+Policy C — Immediate nearest-level
+
+Always find the closest roster size.
+
+This is probably less desirable, but useful as a comparison.
+
+25. Final Design Target
+
+The desired tournament experience is:
+
+Everyone starts
+     │
+     ▼
+  3v3 BASE
+     │
+ ┌───┴───┐
+ │       │
+WIN     LOSS
+ │       │
+ ▼       ▼
+4v4     2v2
+ │       │
+ │    ┌──┴──┐
+ │    │     │
+ │   WIN   LOSS
+ │    │     │
+ │    ▼     ☠
+ │   3v3
+ │    │
+ │   WIN
+ │    ▼
+ │   4v4
+ │    │
+ │   WIN
+ │    ▼
+ ▼   5v5
+     │
+     ▼
+  FINALIST
+
+
+The key loop is:
+
+2 → 3 → 4 → 5
+
+
+while the failure path is:
+
+5 → 4 → 3 → 2 → ☠
+
+
+But 5-player teams lock as finalists, so they don't fall back down.
+
+26. Important Conceptual Rule
+
+The tournament is not a conventional bracket.
+
+It is better thought of as a population ladder / ecosystem.
+
+Teams are constantly moving:
+
+       5 🏆
+       ▲
+       │
+       4
+       ▲
+       │
+       3
+       ▲
+       │
+       2
+       │
+       ▼
+      ☠
+
+
+A team can therefore have a comeback like:
+
+3 → 2 → 3 → 4 → 3 → 2 → 3 → 4 → 5
+
+
+This is one of the main reasons to build the simulator.
+
+27. One Critical Rule Still Under Investigation
+
+The PoC should not assume the emergency matching rule is final.
+
+The main design question is:
+
+What should happen if the only active teams are at different levels and neither has a same-level opponent?
+
+Example:
+
+4-player team
+     +
+2-player team
+
+
+Strict same-level rules produce a deadlock.
+
+Possible solution:
+
+4-player team vs 2-player team
+        ↓
+      2v2
+
+
+The 4-player team fields 2 players.
+
+If it wins:
+
+4 → 5
+2 → eliminated
+
+
+If the 2-player team wins:
+
+2 → 3
+4 → 3
+
+
+The teams reunite at Level 1.
+
+This is a promising emergency mechanism, but simulation should determine whether it creates good or bad tournament behavior.
+
+28. Immediate Task for the Next Agent
+
+Build a single Python file that can:
+
+Generate 24 players.
+Split them into 8 × 3-player teams.
+Run matches.
+Apply steal mechanics.
+Apply Level 0 elimination.
+Lock teams at 5 as finalists.
+Track every state transition.
+Detect deadlocks.
+Support strict same-level matching.
+Support emergency matching.
+Run 1 tournament with verbose output.
+Run 1,000–10,000 tournaments statistically.
+Compare 15/18/21/24/27/30-player pools.
+Report:
+finalist count
+eliminations
+match count
+deadlocks
+emergency matches
+average/median results
+Save interesting tournament histories so specific edge cases can be inspected.
+
+The first goal is not to make the rules perfect.
+
+The first goal is to discover:
+
+Does this system actually produce the fun, elimination-heavy, comeback-oriented tournament we're imagining?

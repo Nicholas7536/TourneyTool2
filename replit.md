@@ -22,11 +22,11 @@ A minimal browser simulator for testing the Strikers Club steal-a-player tournam
 
 ## Architecture decisions
 
-- The current app is intentionally local-only; multiplayer persistence and realtime coordination will be added as a focused backend when that work starts.
+- Multiplayer rooms use a focused MongoDB-backed API with polling for shared state; there is no large realtime framework or component library.
 
 ## Product
 
-The current app runs single tournaments and batch simulations locally. The planned product will add shared-link tournaments, host-controlled rules, team joining, substitutes, challenges, match reporting, and finalist progression.
+The app supports shared-link tournament rooms, host-controlled rules, team joining, substitute queueing and replacement, challenges, match reporting, and finalist progression. The standalone Python simulator remains available for rules testing.
 
 ## User preferences
 
@@ -34,7 +34,7 @@ The current app runs single tournaments and batch simulations locally. The plann
 
 ## Gotchas
 
-The current simulator is a proof of concept, not yet a multiplayer tournament service.
+Room creation and joining require `MONGODB_URI`; use `artifacts/strikers-simulator/.env.example` for the expected configuration names.
 
 ## Pointers
 

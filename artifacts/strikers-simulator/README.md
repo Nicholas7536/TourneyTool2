@@ -25,6 +25,16 @@ the `PORT` and `BASE_PATH` environment variables automatically when running
 the artifact there; neither variable is required for a normal local or Vercel
 build.
 
+For multiplayer room development, copy `.env.example` to `.env.local` and set
+your MongoDB Atlas connection string:
+
+```bash
+cp .env.example .env.local
+```
+
+Set `MONGODB_URI` and optionally `MONGODB_DB`. The simulator can still load
+without MongoDB configured, but creating or joining rooms requires it.
+
 ## Check and build
 
 ```bash
@@ -50,7 +60,9 @@ Vite build and output directory:
 - Output directory: `dist/public`
 - Install command: `pnpm install`
 
-No environment variables are required for the current local simulator.
+The browser shell loads without environment variables, but room creation and
+joining require `MONGODB_URI`. Add `MONGODB_URI` and optionally `MONGODB_DB` to
+the Vercel project environment variables for multiplayer use.
 
 ## Rules reference
 

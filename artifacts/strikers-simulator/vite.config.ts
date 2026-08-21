@@ -1,6 +1,7 @@
 import path from 'path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import app from './server/app';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
@@ -13,6 +14,12 @@ export default defineConfig({
   plugins: [
     react(),
     runtimeErrorOverlay(),
+    {
+      name: 'strikers-api',
+      configureServer(server) {
+        server.middlewares.use(app);
+      },
+    },
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined
       ? [

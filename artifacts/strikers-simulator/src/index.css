@@ -35,6 +35,55 @@ button:disabled {
   padding: 24px;
 }
 
+.app.narrow {
+  width: min(620px, 100%);
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.join-row {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.join-row input {
+  flex: 1;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #d0d0d0;
+}
+
+.challenge-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.player {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+}
+
+.error {
+  margin: 12px 0;
+  padding: 10px;
+  color: #8b0000;
+  background: #f8e5e5;
+  border: 1px solid #d6aaaa;
+}
+
 .header,
 .section-heading,
 .actions,
@@ -123,6 +172,10 @@ button.primary {
 
 button.primary:hover:not(:disabled) {
   background: #111;
+}
+
+button.secondary {
+  margin: 16px 8px 0 0;
 }
 
 .actions {

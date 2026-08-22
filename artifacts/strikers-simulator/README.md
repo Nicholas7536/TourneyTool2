@@ -64,6 +64,11 @@ The browser shell loads without environment variables, but room creation and
 joining require `MONGODB_URI`. Add `MONGODB_URI` and optionally `MONGODB_DB` to
 the Vercel project environment variables for multiplayer use.
 
+Rooms are cleaned up automatically in MongoDB. Waiting rooms expire after 24
+hours, active tournaments after 7 days, and finished tournaments after 24
+hours. MongoDB's TTL index performs the background cleanup, while API reads
+also remove expired legacy room records.
+
 ## Rules reference
 
 The standalone Python simulator remains at the repository root as a separate

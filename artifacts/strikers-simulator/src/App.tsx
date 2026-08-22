@@ -393,8 +393,14 @@ function WaitingRoom({ room, viewer, onJoin, playerName, setPlayerName, busy }: 
 
 function ChallengePanel({ room, myTeam, busy, onAction }: { room: Room; myTeam: Team | null; busy: boolean; onAction: (path: string, body?: unknown) => void }) {
   if (!myTeam || myTeam.finalist || myTeam.eliminated) return null;
+  const occupiedTeamIds = new Set(
+    room.matches
+      .filter((match) => match.status === "lobby")
+      .flatMap((match) => [match.teamAId, match.teamBId]),
+  );
+  if (occupiedTeamIds.has(myTeam.id)) return null;
   const targets = room.teams.filter((team) => {
-    if (team.id === myTeam.id || team.finalist || team.eliminated || team.playerIds.length < 2) return false;
+    if (team.id === myTeam.id || occupiedTeamIds.has(team.id) || team.finalist || team.eliminated || team.playerIds.length < 2) return false;
     if (room.rules.matchmakingPolicy === "strict") return team.rosterSize === myTeam.rosterSize;
     return true;
   });

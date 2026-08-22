@@ -20,17 +20,27 @@ type Player = { id: string; name: string; token: string; teamId: string | null; 
 type Team = { id: string; name: string; leadPlayerId: string | null; playerIds: string[]; rosterSize: number; finalist: boolean; eliminated: boolean };
 type Challenge = { id: string; fromTeamId: string; toTeamId: string; status: "pending" | "accepted" | "reported" | "declined"; matchId?: string };
 type Match = { id: string; challengeId: string; teamAId: string; teamBId: string; lobbyMakerTeamId: string; status: "lobby" | "reported"; winnerTeamId?: string; loserTeamId?: string; stolenPlayerId?: string };
-type Room = { roomCode: string; hostToken: string; rules: { startingPlayers: number; maxFinalists: number; matchmakingPolicy: Policy }; phase: Phase; players: Player[]; teams: Team[]; substitutes: string[]; challenges: Challenge[]; matches: Match[]; finalists: string[]; createdAt: number };
+type Room = { roomCode: string; hostToken: string; rules: { startingPlayers: number; maxFinalists: number; matchmakingPolicy: Policy }; phase: Phase; players: Player[]; teams: Team[]; substitutes: string[]; challenges: Challenge[]; matches: Match[]; finalists: string[]; createdAt: number; expiresAt: number };
+
+const WAITING_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const FINISHED_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 
 const app = express();
 app.use(express.json({ limit: "32kb" }));
 
 let clientPromise: Promise<MongoClient> | null = null;
+let indexesReady: Promise<void> | null = null;
 function collection() {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error("MONGODB_URI is not configured. Add it to .env.local or your deployment environment.");
   clientPromise ??= new MongoClient(uri).connect();
-  return clientPromise.then((client) => client.db(process.env.MONGODB_DB || "strikers").collection<Room>("rooms"));
+  return clientPromise.then(async (client) => {
+    const rooms = client.db(process.env.MONGODB_DB || "strikers").collection<Room>("rooms");
+    indexesReady ??= rooms.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }).then(() => undefined);
+    await indexesReady;
+    return rooms;
+  });
 }
 
 function code() {
@@ -66,7 +76,17 @@ function publicRoom(room: Room, request: Request) {
 }
 
 async function findRoom(roomCode: string) {
-  return (await collection()).findOne({ roomCode });
+  const rooms = await collection();
+  const now = Date.now();
+  await rooms.deleteMany({
+    $or: [
+      { expiresAt: { $lte: now } },
+      { expiresAt: { $exists: false }, phase: "waiting", createdAt: { $lte: now - WAITING_ROOM_TTL_MS } },
+      { expiresAt: { $exists: false }, phase: "active", createdAt: { $lte: now - ACTIVE_ROOM_TTL_MS } },
+      { expiresAt: { $exists: false }, phase: "finished", createdAt: { $lte: now - FINISHED_ROOM_TTL_MS } },
+    ],
+  });
+  return rooms.findOne({ roomCode });
 }
 
 async function saveRoom(room: Room) {
@@ -83,6 +103,10 @@ function requireHost(room: Room, request: Request, response: Response) {
 
 function currentPlayer(room: Room, request: Request) {
   return room.players.find((player) => player.token === request.header("x-room-token"));
+}
+
+function teamInMatch(room: Room, teamId: string) {
+  return room.matches.some((match) => match.status === "lobby" && [match.teamAId, match.teamBId].includes(teamId));
 }
 
 function sendRoom(response: Response, room: Room, request: Request) {
@@ -107,6 +131,7 @@ app.post("/api/rooms", async (request, response) => {
       matches: [],
       finalists: [],
       createdAt: Date.now(),
+       expiresAt: Date.now() + WAITING_ROOM_TTL_MS,
     };
     await saveRoom(room);
     response.status(201).json({ room: publicRoom(room, request), hostToken: room.hostToken });
@@ -163,6 +188,7 @@ app.post("/api/rooms/:roomCode/start", async (request, response) => {
     if (room.phase !== "waiting") return response.status(409).json({ error: "This tournament is not waiting to start." });
     if (room.teams.some((team) => team.playerIds.length !== 3)) return response.status(409).json({ error: "Every starting team needs 3 players before starting." });
     room.phase = "active";
+    room.expiresAt = Date.now() + ACTIVE_ROOM_TTL_MS;
     await saveRoom(room);
     sendRoom(response, room, request);
   } catch (error) {
@@ -199,7 +225,7 @@ app.post("/api/rooms/:roomCode/challenges", async (request, response) => {
     const toTeam = room?.teams.find((team) => team.id === request.body?.toTeamId);
     if (!room) return response.status(404).json({ error: "Tournament room not found." });
     if (room.phase !== "active" || !player || !fromTeam || fromTeam.leadPlayerId !== player.id) return response.status(403).json({ error: "Only an active team lead can challenge." });
-    if (!toTeam || toTeam.id === fromTeam.id || toTeam.finalist || toTeam.eliminated || toTeam.playerIds.length < 2) return response.status(400).json({ error: "That team cannot be challenged." });
+    if (!toTeam || toTeam.id === fromTeam.id || toTeam.finalist || toTeam.eliminated || toTeam.playerIds.length < 2 || teamInMatch(room, fromTeam.id) || teamInMatch(room, toTeam.id)) return response.status(400).json({ error: "That team cannot be challenged right now." });
     if (room.rules.matchmakingPolicy === "strict" && toTeam.rosterSize !== fromTeam.rosterSize) return response.status(400).json({ error: "The matchmaking policy only allows teams with the same roster size." });
     if (room.challenges.some((challenge) => challenge.status === "pending" && (challenge.fromTeamId === fromTeam.id || challenge.toTeamId === fromTeam.id))) return response.status(409).json({ error: "Your team already has a pending challenge." });
     room.challenges.push({ id: `challenge-${randomUUID()}`, fromTeamId: fromTeam.id, toTeamId: toTeam.id, status: "pending" });
@@ -249,7 +275,9 @@ app.post("/api/rooms/:roomCode/challenges/:challengeId/accept", async (request, 
     const team = player && room.teams.find((item) => item.id === player.teamId);
     if (!player || !team || team.id !== challenge.toTeamId || team.leadPlayerId !== player.id) return response.status(403).json({ error: "Only the challenged team lead can accept." });
     if (challenge.status !== "pending") return response.status(409).json({ error: "That challenge is no longer pending." });
+    if (teamInMatch(room, challenge.fromTeamId) || teamInMatch(room, challenge.toTeamId)) return response.status(409).json({ error: "One of these teams is already in a match." });
     challenge.status = "accepted";
+    room.challenges = room.challenges.filter((item) => item.id === challenge.id || item.status !== "pending" || (item.fromTeamId !== challenge.toTeamId && item.toTeamId !== challenge.toTeamId && item.fromTeamId !== challenge.fromTeamId && item.toTeamId !== challenge.fromTeamId));
     const match: Match = { id: `match-${randomUUID()}`, challengeId: challenge.id, teamAId: challenge.fromTeamId, teamBId: challenge.toTeamId, lobbyMakerTeamId: challenge.fromTeamId, status: "lobby" };
     challenge.matchId = match.id;
     room.matches.push(match);
@@ -296,7 +324,10 @@ app.post("/api/rooms/:roomCode/matches/:matchId/report", async (request, respons
     match.stolenPlayerId = stolenPlayerId;
     const challenge = room.challenges.find((item) => item.id === match.challengeId);
     if (challenge) challenge.status = "reported";
-    if (room.finalists.length >= room.rules.maxFinalists) room.phase = "finished";
+    if (room.finalists.length >= room.rules.maxFinalists) {
+      room.phase = "finished";
+      room.expiresAt = Date.now() + FINISHED_ROOM_TTL_MS;
+    }
     await saveRoom(room);
     sendRoom(response, room, request);
   } catch (error) {

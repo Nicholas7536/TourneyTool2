@@ -14,3 +14,6 @@ runButton = "Project"
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
+
+[nix]
+channel = "stable-25_05"

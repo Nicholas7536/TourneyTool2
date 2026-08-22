@@ -16,12 +16,7 @@ run = "pnpm --filter @workspace/strikers-simulator run dev"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/strikers-simulator", "run", "build" ]
-serve = "static"
-publicDir = "artifacts/strikers-simulator/dist/public"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+run = "pnpm --filter @workspace/strikers-simulator run serve"
 
 [services.env]
 PORT = "21124"

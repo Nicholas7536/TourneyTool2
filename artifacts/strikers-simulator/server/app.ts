@@ -1,4 +1,14 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "node:path";
+
+for (const envFile of [
+  path.resolve(process.cwd(), "artifacts/strikers-simulator/.env.local"),
+  path.resolve(process.cwd(), ".env.local"),
+  path.resolve(process.cwd(), "artifacts/strikers-simulator/.env"),
+  path.resolve(process.cwd(), ".env"),
+]) {
+  dotenv.config({ path: envFile });
+}
 
 import express, { type Request, type Response } from "express";
 import { MongoClient } from "mongodb";

@@ -15,9 +15,6 @@
     "mongodb": "^6.20.0"
   },
   "devDependencies": {
-    "@replit/vite-plugin-cartographer": "catalog:",
-    "@replit/vite-plugin-dev-banner": "catalog:",
-    "@replit/vite-plugin-runtime-error-modal": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
@@ -26,6 +23,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
     "vite": "catalog:"
   }
 }

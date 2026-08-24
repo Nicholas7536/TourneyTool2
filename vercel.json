@@ -1,5 +1,5 @@
 {
   "buildCommand": "pnpm run build",
-  "outputDirectory": "dist/public",
+  "outputDirectory": "artifacts/strikers-simulator/dist/public",
   "installCommand": "pnpm install"
 }

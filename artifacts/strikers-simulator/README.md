@@ -35,6 +35,54 @@ Set `MONGODB_URI` and optionally `MONGODB_DB`. The simulator can still load
 without MongoDB configured, but creating or joining rooms requires it. Never
 commit `.env.local` or put credentials in source files.
 
+To enable the development-only manual multiplayer harness, also set:
+
+```bash
+ENABLE_TEST_HARNESS=true
+```
+
+Restart the server, then open `/?harness=1`. Click **Create fresh 15-player
+room** and open the individual player views. Each view uses a separate test
+token while running the normal tournament frontend, so all actions remain
+manual. The harness is disabled and its API returns 404 unless the environment
+flag is enabled.
+
+### Manual harness commands
+
+From the repository root, install dependencies and build the frontend:
+
+```powershell
+corepack pnpm install
+corepack pnpm --filter @workspace/strikers-simulator run typecheck
+corepack pnpm --filter @workspace/strikers-simulator run build
+```
+
+For the current PowerShell session, enable the harness with:
+
+```powershell
+$env:ENABLE_TEST_HARNESS = "true"
+```
+
+Alternatively, add `ENABLE_TEST_HARNESS=true` to `.env.local` before starting the server.
+
+Then start the Vite development server:
+
+```powershell
+corepack pnpm --filter @workspace/strikers-simulator run dev
+```
+
+Open [http://localhost:5173/?harness=1](http://localhost:5173/?harness=1).
+
+To run the built version instead:
+
+```powershell
+corepack pnpm --filter @workspace/strikers-simulator run serve
+```
+
+Then open [http://localhost:3000/?harness=1](http://localhost:3000/?harness=1).
+
+Do not enable `ENABLE_TEST_HARNESS` in production.
+
 ## Check and build
 
 ```bash

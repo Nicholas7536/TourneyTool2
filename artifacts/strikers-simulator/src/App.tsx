@@ -41,6 +41,9 @@ type Match = {
   teamBId: string;
   lobbyMakerTeamId: string;
   status: "lobby" | "reported";
+  emergency?: boolean;
+  goldenGoal?: boolean;
+  stolenPlayerIds?: string[];
   winnerTeamId?: string;
   loserTeamId?: string;
   stolenPlayerId?: string;
@@ -62,6 +65,21 @@ type Room = {
     teamId: string | null;
     isLead: boolean;
   };
+};
+
+type HarnessSession = {
+  playerId: string;
+  name: string;
+  token: string;
+  teamId: string | null;
+  teamName: string;
+  isLead: boolean;
+};
+
+type HarnessSetup = {
+  room: Room;
+  hostToken: string;
+  sessions: HarnessSession[];
 };
 
 const PLAYER_POOLS = [15, 18, 21, 24, 27, 30];
@@ -86,6 +104,8 @@ async function request<T>(
 }
 
 function roomToken(roomCode: string): string | undefined {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("room")?.toUpperCase() === roomCode && params.get("testToken")) return params.get("testToken") ?? undefined;
   return localStorage.getItem(`strikers-room-token:${roomCode}`) ?? undefined;
 }
 
@@ -98,6 +118,82 @@ function roomFromUrl(): string {
 }
 
 export default function App() {
+  return new URLSearchParams(window.location.search).get("harness") === "1" ? <TestHarness /> : <TournamentApp />;
+}
+
+function TestHarness() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [setup, setSetup] = useState<HarnessSetup | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/test-harness/status")
+      .then((response) => setEnabled(response.ok))
+      .catch(() => setEnabled(false));
+  }, []);
+
+  async function createTestRoom() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await request<HarnessSetup>("/test-harness/rooms", { method: "POST", body: JSON.stringify({}) });
+      setSetup(result);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create test room");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshRoom() {
+    if (!setup) return;
+    try {
+      const result = await request<{ room: Room }>(`/rooms/${setup.room.roomCode}`, {}, setup.hostToken);
+      setSetup({ ...setup, room: result.room });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not refresh test room");
+    }
+  }
+
+  function openSession(session: HarnessSession) {
+    if (!setup) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("harness");
+    url.searchParams.set("room", setup.room.roomCode);
+    url.searchParams.set("testToken", session.token);
+    window.open(url.toString(), `strikers-test-${session.playerId}`);
+  }
+
+  if (enabled === null) return <main className="app narrow"><p className="note">Checking test harness availability...</p></main>;
+  if (!enabled) return <main className="app narrow"><section className="panel"><h1>Test harness disabled</h1><p className="note">Set ENABLE_TEST_HARNESS=true in the development environment and restart the server.</p></section></main>;
+
+  return (
+    <main className="app harness">
+      <header className="header">
+        <div><h1>Manual multiplayer test harness</h1><p>Development-only setup for 15 real player sessions.</p></div>
+        {setup ? <button onClick={refreshRoom} disabled={busy}>Refresh room</button> : null}
+      </header>
+      <section className="panel">
+        <p className="note">The harness creates the room and isolated sessions. You perform all tournament actions manually in the player windows.</p>
+        <button className="primary" onClick={createTestRoom} disabled={busy}>{busy ? "Creating..." : "Create fresh 15-player room"}</button>
+        {setup ? <><span className="harness-room">Room <strong>{setup.room.roomCode}</strong> · {setup.room.phase}</span><button className="secondary" onClick={() => setup.sessions.forEach(openSession)}>Open all player sessions</button></> : null}
+      </section>
+      {error ? <p className="error">{error}</p> : null}
+      {setup ? <section className="harness-grid">{setup.sessions.map((session) => {
+        const player = setup.room.players.find((item) => item.id === session.playerId);
+        const team = setup.room.teams.find((item) => item.id === player?.teamId);
+        return <article className="harness-card" key={session.playerId}>
+          <div><h2>{session.name}</h2><p>{team?.name ?? session.teamName} · {session.isLead ? "team lead" : "player"}</p></div>
+          <span className="harness-state">{team?.finalist ? "finalist" : team?.eliminated ? "eliminated" : `${team?.rosterSize ?? 0} players`}</span>
+          <button onClick={() => openSession(session)}>Open player view</button>
+        </article>;
+      })}</section> : null}
+    </main>
+  );
+}
+
+function TournamentApp() {
   const [roomCode, setRoomCode] = useState(roomFromUrl());
   const [room, setRoom] = useState<Room | null>(null);
   const [error, setError] = useState("");
@@ -188,7 +284,9 @@ export default function App() {
       await request(path, { method: "POST", body: JSON.stringify(body ?? {}) }, playerToken || hostToken);
       await loadRoom();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Action failed");
+      const message = cause instanceof Error ? cause.message : "Action failed";
+      setError(message);
+      await loadRoom();
     } finally {
       setBusy(false);
     }
@@ -320,6 +418,8 @@ export default function App() {
                   <span>{teamName(room, challenge.fromTeamId)} challenged {teamName(room, challenge.toTeamId)}</span>
                   {challenge.toTeamId === viewer?.teamId ? (
                     <button onClick={() => roomAction(`/rooms/${room.roomCode}/challenges/${challenge.id}/accept`)} disabled={busy}>Accept</button>
+                  ) : challenge.fromTeamId === viewer?.teamId ? (
+                    <button onClick={() => roomAction(`/rooms/${room.roomCode}/challenges/${challenge.id}/cancel`)} disabled={busy}>Cancel</button>
                   ) : <small>Waiting for acceptance</small>}
                 </div>
               ))}
@@ -399,10 +499,18 @@ function ChallengePanel({ room, myTeam, busy, onAction }: { room: Room; myTeam: 
       .flatMap((match) => [match.teamAId, match.teamBId]),
   );
   if (occupiedTeamIds.has(myTeam.id)) return null;
+  const hasOutgoingChallenge = room.challenges.some((challenge) => challenge.status === "pending" && challenge.fromTeamId === myTeam.id);
+  if (hasOutgoingChallenge) return null;
+  const availableTeams = room.teams.filter((team) => !team.finalist && !team.eliminated && team.playerIds.length >= 2 && !occupiedTeamIds.has(team.id));
+  const sameLevelExists = availableTeams.some((team, index) => availableTeams.some((other, otherIndex) => index !== otherIndex && team.rosterSize === other.rosterSize));
+  const nearestDistance = availableTeams.reduce((best, team, index) => availableTeams.reduce((innerBest, other, otherIndex) => index === otherIndex ? innerBest : Math.min(innerBest, Math.abs(team.rosterSize - other.rosterSize)), best), Number.POSITIVE_INFINITY);
+  const distinctSizes = [...new Set(availableTeams.map((team) => team.rosterSize))].sort((a, b) => a - b);
   const targets = room.teams.filter((team) => {
     if (team.id === myTeam.id || occupiedTeamIds.has(team.id) || team.finalist || team.eliminated || team.playerIds.length < 2) return false;
     if (room.rules.matchmakingPolicy === "strict") return team.rosterSize === myTeam.rosterSize;
-    return true;
+    if (room.rules.matchmakingPolicy === "nearest") return Math.abs(team.rosterSize - myTeam.rosterSize) === nearestDistance;
+    if (sameLevelExists) return team.rosterSize === myTeam.rosterSize;
+    return distinctSizes.length >= 2 && distinctSizes.slice(0, 2).includes(myTeam.rosterSize) && distinctSizes.slice(0, 2).includes(team.rosterSize) && team.rosterSize !== myTeam.rosterSize;
   });
   return (
     <section className="panel">
@@ -421,7 +529,7 @@ function ChallengePanel({ room, myTeam, busy, onAction }: { room: Room; myTeam: 
 }
 
 function MatchPanel({ room, match, viewer, busy, onAction }: { room: Room; match: Match; viewer: Room["viewer"] | undefined; busy: boolean; onAction: (path: string, body?: unknown) => void }) {
-  const canReport = viewer?.isLead && (viewer.teamId === match.teamAId || viewer.teamId === match.teamBId);
+  const canReport = room.phase === "active" && viewer?.isLead && (viewer.teamId === match.teamAId || viewer.teamId === match.teamBId);
   const [winnerTeamId, setWinnerTeamId] = useState(match.teamAId);
   const loserTeamId = winnerTeamId === match.teamAId ? match.teamBId : match.teamAId;
   const loser = room.teams.find((team) => team.id === loserTeamId);
@@ -429,11 +537,13 @@ function MatchPanel({ room, match, viewer, busy, onAction }: { room: Room; match
     <section className="panel">
       <h2>Match lobby</h2>
       <p>{teamName(room, match.teamAId)} vs {teamName(room, match.teamBId)}</p>
+      {match.emergency ? <p className="note">Emergency match</p> : null}
+      {match.goldenGoal ? <p className="note">Golden-goal match: the loser keeps one player.</p> : null}
       <p className="note">Lobby maker: {teamName(room, match.lobbyMakerTeamId)}</p>
       {canReport ? (
         <form className="form-grid" onSubmit={(event) => { event.preventDefault(); const stolen = new FormData(event.currentTarget).get("stolenPlayerId"); onAction(`/rooms/${room.roomCode}/matches/${match.id}/report`, { winnerTeamId, stolenPlayerId: stolen }); }}>
           <label>Winner<select value={winnerTeamId} onChange={(event) => setWinnerTeamId(event.target.value)}><option value={match.teamAId}>{teamName(room, match.teamAId)}</option><option value={match.teamBId}>{teamName(room, match.teamBId)}</option></select></label>
-          <label>Player stolen<select name="stolenPlayerId">{loser?.playerIds.map((id) => <option value={id} key={id}>{room.players.find((player) => player.id === id)?.name}</option>)}</select></label>
+          {!match.goldenGoal ? <label>Player stolen<select name="stolenPlayerId">{loser?.playerIds.map((id) => <option value={id} key={id}>{room.players.find((player) => player.id === id)?.name}</option>)}</select></label> : null}
           <button className="primary" disabled={busy || !loser?.playerIds.length}>Report result</button>
         </form>
       ) : <p className="note">Team leads report the winner and stolen player after the lobby match.</p>}

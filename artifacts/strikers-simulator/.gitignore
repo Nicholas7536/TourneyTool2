@@ -1,0 +1,6 @@
+# Agent files and directories
+.agents/
+agents/
+
+# Markdown files
+*.md

@@ -156,6 +156,12 @@ function TestHarness() {
     }
   }
 
+  useEffect(() => {
+    if (!setup) return;
+    const interval = window.setInterval(() => void refreshRoom(), 2000);
+    return () => window.clearInterval(interval);
+  }, [setup?.room.roomCode]);
+
   function openSession(session: HarnessSession) {
     if (!setup) return;
     const url = new URL(window.location.href);
@@ -183,9 +189,13 @@ function TestHarness() {
       {setup ? <section className="harness-grid">{setup.sessions.map((session) => {
         const player = setup.room.players.find((item) => item.id === session.playerId);
         const team = setup.room.teams.find((item) => item.id === player?.teamId);
+        const isLead = team?.leadPlayerId === player?.id;
+        const displayedTeamName = team?.name ?? (player?.teamId ? session.teamName : "No team");
+        const state = team?.finalist ? "finalist" : team?.eliminated ? "eliminated" : player?.substitute ? "substitute queue" : team ? `${team.rosterSize} players · active` : "no team";
         return <article className="harness-card" key={session.playerId}>
-          <div><h2>{session.name}</h2><p>{team?.name ?? session.teamName} · {session.isLead ? "team lead" : "player"}</p></div>
-          <span className="harness-state">{team?.finalist ? "finalist" : team?.eliminated ? "eliminated" : `${team?.rosterSize ?? 0} players`}</span>
+          <div><h2>{player?.name ?? session.name}</h2><p><strong>Player:</strong> {player?.name ?? session.name}</p><p><strong>Team:</strong> {displayedTeamName}</p><p><strong>Role:</strong> {isLead ? "team lead" : "player"}</p></div>
+          <div className="harness-roster"><strong>Team roster</strong>{team?.playerIds.map((id) => <span key={id}>{setup.room.players.find((item) => item.id === id)?.name ?? id}</span>)}</div>
+          <span className="harness-state">{state}</span>
           <button onClick={() => openSession(session)}>Open player view</button>
         </article>;
       })}</section> : null}
@@ -376,6 +386,8 @@ function TournamentApp() {
         </button>
       </header>
 
+      <CurrentWindowNotifier room={room} />
+
       {viewer?.role === "host" && room.phase === "waiting" ? (
         <section className="panel">
           <h2>Host rules</h2>
@@ -439,6 +451,32 @@ function TournamentApp() {
       )}
       {error ? <p className="error">{error}</p> : null}
     </main>
+  );
+}
+
+function CurrentWindowNotifier({ room }: { room: Room }) {
+  const viewer = room.viewer;
+  const player = viewer.playerId ? room.players.find((item) => item.id === viewer.playerId) : null;
+  const team = viewer.teamId ? room.teams.find((item) => item.id === viewer.teamId) : null;
+  const teamPlayers = team?.playerIds
+    .map((id) => room.players.find((item) => item.id === id)?.name)
+    .filter((name): name is string => Boolean(name)) ?? [];
+  const role = viewer.role === "host" ? "host" : viewer.isLead ? "team lead" : "player";
+
+  return (
+    <section className="panel current-window" aria-label="Current window">
+      <div>
+        <span className="eyebrow">Current window</span>
+        <h2>{player ? `You are ${player.name}` : `You are viewing as ${role}`}</h2>
+      </div>
+      <div className="current-window-details">
+        <span><strong>Player</strong>{player?.name ?? "Host / spectator"}</span>
+        <span><strong>Team</strong>{team?.name ?? "Not assigned"}</span>
+        <span><strong>Role</strong>{role}</span>
+        <span><strong>Phase</strong>{room.phase}</span>
+      </div>
+      {team ? <p className="note">Your team: {teamPlayers.join(", ")} · {team.rosterSize} players</p> : <p className="note">This window is not assigned to a team.</p>}
+    </section>
   );
 }
 
@@ -533,18 +571,49 @@ function MatchPanel({ room, match, viewer, busy, onAction }: { room: Room; match
   const [winnerTeamId, setWinnerTeamId] = useState(match.teamAId);
   const loserTeamId = winnerTeamId === match.teamAId ? match.teamBId : match.teamAId;
   const loser = room.teams.find((team) => team.id === loserTeamId);
+  const [goldenGoalPlayerIds, setGoldenGoalPlayerIds] = useState<string[]>([]);
+  const [reportError, setReportError] = useState("");
+
+  useEffect(() => {
+    if (match.goldenGoal) setGoldenGoalPlayerIds(loser?.playerIds.slice(1) ?? []);
+  }, [match.goldenGoal, loser?.id, loser?.playerIds.join(",")]);
+
+  function toggleGoldenGoalPlayer(playerId: string) {
+    setGoldenGoalPlayerIds((current) => current.includes(playerId)
+      ? current.filter((id) => id !== playerId)
+      : current.length < (loser ? loser.playerIds.length - 1 : 0) ? [...current, playerId] : current);
+  }
+
   return (
     <section className="panel">
       <h2>Match lobby</h2>
       <p>{teamName(room, match.teamAId)} vs {teamName(room, match.teamBId)}</p>
       {match.emergency ? <p className="note">Emergency match</p> : null}
-      {match.goldenGoal ? <p className="note">Golden-goal match: the loser keeps one player.</p> : null}
+      {match.goldenGoal ? <p className="note golden-goal-notice">Golden-goal match: first to score wins. The winner takes every player except one, and the losing team is eliminated.</p> : null}
       <p className="note">Lobby maker: {teamName(room, match.lobbyMakerTeamId)}</p>
       {canReport ? (
-        <form className="form-grid" onSubmit={(event) => { event.preventDefault(); const stolen = new FormData(event.currentTarget).get("stolenPlayerId"); onAction(`/rooms/${room.roomCode}/matches/${match.id}/report`, { winnerTeamId, stolenPlayerId: stolen }); }}>
+        <form className="form-grid" onSubmit={(event) => {
+          event.preventDefault();
+          setReportError("");
+          const required = loser ? loser.playerIds.length - 1 : 0;
+          if (match.goldenGoal && goldenGoalPlayerIds.length !== required) {
+            setReportError(`Select exactly ${required} players to transfer.`);
+            return;
+          }
+          const stolen = new FormData(event.currentTarget).get("stolenPlayerId");
+          onAction(`/rooms/${room.roomCode}/matches/${match.id}/report`, match.goldenGoal
+            ? { winnerTeamId, stolenPlayerIds: goldenGoalPlayerIds }
+            : { winnerTeamId, stolenPlayerId: stolen });
+        }}>
           <label>Winner<select value={winnerTeamId} onChange={(event) => setWinnerTeamId(event.target.value)}><option value={match.teamAId}>{teamName(room, match.teamAId)}</option><option value={match.teamBId}>{teamName(room, match.teamBId)}</option></select></label>
-          {!match.goldenGoal ? <label>Player stolen<select name="stolenPlayerId">{loser?.playerIds.map((id) => <option value={id} key={id}>{room.players.find((player) => player.id === id)?.name}</option>)}</select></label> : null}
+          {!match.goldenGoal ? <label>Player stolen<select name="stolenPlayerId">{loser?.playerIds.map((id) => <option value={id} key={id}>{room.players.find((player) => player.id === id)?.name}</option>)}</select></label> : (
+            <fieldset className="golden-goal-players">
+              <legend>Select {loser ? loser.playerIds.length - 1 : 0} players to transfer</legend>
+              {loser?.playerIds.map((id) => <label key={id}><input type="checkbox" checked={goldenGoalPlayerIds.includes(id)} onChange={() => toggleGoldenGoalPlayer(id)} />{room.players.find((player) => player.id === id)?.name}</label>)}
+            </fieldset>
+          )}
           <button className="primary" disabled={busy || !loser?.playerIds.length}>Report result</button>
+          {reportError ? <p className="error">{reportError}</p> : null}
         </form>
       ) : <p className="note">Team leads report the winner and stolen player after the lobby match.</p>}
     </section>

@@ -471,9 +471,13 @@ app.post("/api/rooms/:roomCode/matches/:matchId/report", async (request, respons
     const winner = room.teams.find((item) => item.id === request.body?.winnerTeamId);
     const loser = room.teams.find((item) => item.id !== winner?.id && [match.teamAId, match.teamBId].includes(item.id));
     const stolenPlayerId = String(request.body?.stolenPlayerId ?? "");
-    if (!winner || !loser || winner.finalist || winner.eliminated || loser.finalist || loser.eliminated || winner.rosterSize < 2 || winner.rosterSize >= 5 || ![match.teamAId, match.teamBId].includes(winner.id) || loser.playerIds.length < 2 || (!match.goldenGoal && !loser.playerIds.includes(stolenPlayerId))) return response.status(400).json({ error: "Choose a valid winner and stolen player." });
-    const stolenPlayerIds = match.goldenGoal ? loser.playerIds.slice(1) : [stolenPlayerId];
+    const requestedGoldenGoalPlayerIds: string[] = Array.isArray(request.body?.stolenPlayerIds) ? request.body.stolenPlayerIds.map((id: unknown) => String(id)) : [];
+    const hasUniqueGoldenGoalPlayers = new Set(requestedGoldenGoalPlayerIds).size === requestedGoldenGoalPlayerIds.length;
+    const validGoldenGoalSelection = requestedGoldenGoalPlayerIds.length === (loser?.playerIds.length ?? 0) - 1 && hasUniqueGoldenGoalPlayers && requestedGoldenGoalPlayerIds.every((id) => loser?.playerIds.includes(id));
+    if (!winner || !loser || winner.finalist || winner.eliminated || loser.finalist || loser.eliminated || winner.rosterSize < 2 || winner.rosterSize >= 5 || ![match.teamAId, match.teamBId].includes(winner.id) || loser.playerIds.length < 2 || (match.goldenGoal ? !validGoldenGoalSelection : !loser.playerIds.includes(stolenPlayerId))) return response.status(400).json({ error: match.goldenGoal ? "Choose exactly one fewer player than the losing team has." : "Choose a valid winner and stolen player." });
+    const stolenPlayerIds = match.goldenGoal ? requestedGoldenGoalPlayerIds : [stolenPlayerId];
     const remainingLoserPlayerIds = match.goldenGoal ? loser.playerIds.slice(0, 1) : loser.playerIds.filter((id) => id !== stolenPlayerId);
+    if (match.goldenGoal && stolenPlayerIds.length !== loser.playerIds.length - 1) return response.status(400).json({ error: "Golden-goal matches must transfer all but one player from the losing team." });
     loser.playerIds = remainingLoserPlayerIds;
     winner.playerIds.push(...stolenPlayerIds);
     winner.rosterSize = winner.playerIds.length;
@@ -489,7 +493,12 @@ app.post("/api/rooms/:roomCode/matches/:matchId/report", async (request, respons
     }
     if (loser.rosterSize <= 1) {
       loser.eliminated = true;
-      loser.playerIds.forEach((id) => { const playerToEliminate = room.players.find((item) => item.id === id); if (playerToEliminate) playerToEliminate.teamId = loser.id; });
+      if (match.goldenGoal) {
+        loser.playerIds.forEach((id) => {
+          const playerToEliminate = room.players.find((item) => item.id === id);
+          if (playerToEliminate) playerToEliminate.teamId = null;
+        });
+      }
     }
     if (!loser.playerIds.includes(loser.leadPlayerId ?? "")) loser.leadPlayerId = loser.playerIds[0] ?? null;
     match.status = "reported";

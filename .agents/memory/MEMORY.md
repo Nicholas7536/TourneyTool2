@@ -1,1 +1,0 @@
-- [Tournament state reachability](strikers-tournament-simulation.md) — validate edge-case states against legal transitions before treating handoff examples as reachable.

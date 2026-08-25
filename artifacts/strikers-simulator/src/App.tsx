@@ -491,7 +491,7 @@ function RulesForm({ rules, setRules }: { rules: Rules; setRules: (rules: Rules)
       </label>
       <label>
         Maximum finalists
-        <input type="number" min={1} max={4} value={rules.maxFinalists} onChange={(event) => setRules({ ...rules, maxFinalists: Math.max(1, Math.min(4, Number(event.target.value) || 1)) })} />
+        <input type="number" min={1} max={5} value={rules.maxFinalists} onChange={(event) => setRules({ ...rules, maxFinalists: Math.max(1, Math.min(5, Number(event.target.value) || 1)) })} />
       </label>
       <label>
         Matchmaking policy
@@ -575,8 +575,8 @@ function MatchPanel({ room, match, viewer, busy, onAction }: { room: Room; match
   const [reportError, setReportError] = useState("");
 
   useEffect(() => {
-    if (match.goldenGoal) setGoldenGoalPlayerIds(loser?.playerIds.slice(1) ?? []);
-  }, [match.goldenGoal, loser?.id, loser?.playerIds.join(",")]);
+    setGoldenGoalPlayerIds([]);
+  }, [match.id, loser?.id]);
 
   function toggleGoldenGoalPlayer(playerId: string) {
     setGoldenGoalPlayerIds((current) => current.includes(playerId)

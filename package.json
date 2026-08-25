@@ -3,9 +3,8 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "build": "pnpm run typecheck && pnpm --filter @workspace/strikers-simulator run build",
-    "typecheck": "pnpm --filter @workspace/strikers-simulator run typecheck"
+    "build": "corepack pnpm run typecheck && corepack pnpm --filter @workspace/strikers-simulator run build",
+    "typecheck": "corepack pnpm --filter @workspace/strikers-simulator run typecheck"
   },
   "private": true,
   "packageManager": "pnpm@11.23.0+sha512.f00082e5b283a199b74e079da28d155c008fe232f44c8a06ea7ddfa014ecf719fc362f790ecc67b28106ddac2afb24c49a9a079159da560b2ce7d1e98efd11af"

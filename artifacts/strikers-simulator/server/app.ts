@@ -210,8 +210,8 @@ app.post("/api/test-harness/rooms", async (request, response) => {
   try {
     if (!requireTestHarness(response)) return undefined;
     const { matchmakingPolicy = "strict-emergency", maxFinalists = 2 } = request.body ?? {};
-    if (!Number.isInteger(Number(maxFinalists)) || Number(maxFinalists) < 1 || Number(maxFinalists) > 4) {
-      response.status(400).json({ error: "Maximum finalists must be between 1 and 4." });
+    if (!Number.isInteger(Number(maxFinalists)) || Number(maxFinalists) < 1 || Number(maxFinalists) > 5) {
+      response.status(400).json({ error: "Maximum finalists must be between 1 and 5." });
       return undefined;
     }
     if (!["strict", "strict-emergency", "nearest"].includes(matchmakingPolicy)) {
@@ -263,7 +263,7 @@ app.post("/api/rooms", async (request, response) => {
   try {
     const { startingPlayers = 24, maxFinalists = 2, matchmakingPolicy = "strict-emergency" } = request.body ?? {};
     if (![15, 18, 21, 24, 27, 30].includes(Number(startingPlayers))) return response.status(400).json({ error: "Starting players must be 15, 18, 21, 24, 27, or 30." });
-    if (!Number.isInteger(Number(maxFinalists)) || Number(maxFinalists) < 1 || Number(maxFinalists) > 4) return response.status(400).json({ error: "Maximum finalists must be between 1 and 4." });
+    if (!Number.isInteger(Number(maxFinalists)) || Number(maxFinalists) < 1 || Number(maxFinalists) > 5) return response.status(400).json({ error: "Maximum finalists must be between 1 and 5." });
     if (!["strict", "strict-emergency", "nearest"].includes(matchmakingPolicy)) return response.status(400).json({ error: "Invalid matchmaking policy." });
     const room: Room = {
       roomCode: code(),
@@ -351,7 +351,7 @@ app.post("/api/rooms/:roomCode/rules", async (request, response) => {
     if (room.phase !== "waiting") return response.status(409).json({ error: "Rules can only be changed before the tournament starts." });
     const { startingPlayers, maxFinalists, matchmakingPolicy } = request.body ?? {};
     if (Number(startingPlayers) !== room.rules.startingPlayers) return response.status(400).json({ error: "Starting player count cannot change after the room is created." });
-    if (!Number.isInteger(Number(maxFinalists)) || Number(maxFinalists) < 1 || Number(maxFinalists) > 4) return response.status(400).json({ error: "Maximum finalists must be between 1 and 4." });
+    if (!Number.isInteger(Number(maxFinalists)) || Number(maxFinalists) < 1 || Number(maxFinalists) > 5) return response.status(400).json({ error: "Maximum finalists must be between 1 and 5." });
     if (!["strict", "strict-emergency", "nearest"].includes(matchmakingPolicy)) return response.status(400).json({ error: "Invalid matchmaking policy." });
     room.rules.maxFinalists = Number(maxFinalists);
     room.rules.matchmakingPolicy = matchmakingPolicy;
@@ -476,8 +476,9 @@ app.post("/api/rooms/:roomCode/matches/:matchId/report", async (request, respons
     const validGoldenGoalSelection = requestedGoldenGoalPlayerIds.length === (loser?.playerIds.length ?? 0) - 1 && hasUniqueGoldenGoalPlayers && requestedGoldenGoalPlayerIds.every((id) => loser?.playerIds.includes(id));
     if (!winner || !loser || winner.finalist || winner.eliminated || loser.finalist || loser.eliminated || winner.rosterSize < 2 || winner.rosterSize >= 5 || ![match.teamAId, match.teamBId].includes(winner.id) || loser.playerIds.length < 2 || (match.goldenGoal ? !validGoldenGoalSelection : !loser.playerIds.includes(stolenPlayerId))) return response.status(400).json({ error: match.goldenGoal ? "Choose exactly one fewer player than the losing team has." : "Choose a valid winner and stolen player." });
     const stolenPlayerIds = match.goldenGoal ? requestedGoldenGoalPlayerIds : [stolenPlayerId];
-    const remainingLoserPlayerIds = match.goldenGoal ? loser.playerIds.slice(0, 1) : loser.playerIds.filter((id) => id !== stolenPlayerId);
+    const remainingLoserPlayerIds = loser.playerIds.filter((id) => !stolenPlayerIds.includes(id));
     if (match.goldenGoal && stolenPlayerIds.length !== loser.playerIds.length - 1) return response.status(400).json({ error: "Golden-goal matches must transfer all but one player from the losing team." });
+    if (winner.playerIds.length + stolenPlayerIds.length > 5) return response.status(400).json({ error: "A match cannot create a team larger than five players." });
     loser.playerIds = remainingLoserPlayerIds;
     winner.playerIds.push(...stolenPlayerIds);
     winner.rosterSize = winner.playerIds.length;
@@ -486,9 +487,8 @@ app.post("/api/rooms/:roomCode/matches/:matchId/report", async (request, respons
       const stolen = room.players.find((item) => item.id === id);
       if (stolen) stolen.teamId = winner.id;
     });
-    if (winner.rosterSize >= 5) {
+    if (winner.rosterSize === 5) {
       winner.finalist = true;
-      winner.playerIds = winner.playerIds.slice(0, 5);
       room.finalists.push(winner.id);
     }
     if (loser.rosterSize <= 1) {

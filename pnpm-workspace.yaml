@@ -14,5 +14,5 @@ catalog:
 
 autoInstallPeers: false
 
-onlyBuiltDependencies:
-  - esbuild
+allowBuilds:
+  esbuild: true

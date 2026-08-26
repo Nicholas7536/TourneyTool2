@@ -5,7 +5,7 @@ steal-a-player tournament rules.
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 20.19 or newer (Render uses Node.js 22.15.0)
 - pnpm 10 or newer (or npm, if you adapt the commands)
 
 ## Install
@@ -52,9 +52,9 @@ flag is enabled.
 From the repository root, install dependencies and build the frontend:
 
 ```powershell
-corepack pnpm install
-corepack pnpm run typecheck
-corepack pnpm run build
+pnpm install
+pnpm run typecheck
+pnpm run build
 ```
 
 For the current PowerShell session, enable the harness with:
@@ -68,7 +68,7 @@ Alternatively, add `ENABLE_TEST_HARNESS=true` to `.env.local` before starting th
 Then start the Vite development server:
 
 ```powershell
-corepack pnpm run dev
+pnpm run dev
 ```
 
 Open [http://localhost:5173/?harness=1](http://localhost:5173/?harness=1).
@@ -76,7 +76,7 @@ Open [http://localhost:5173/?harness=1](http://localhost:5173/?harness=1).
 To run the built version instead:
 
 ```powershell
-corepack pnpm run serve
+pnpm run serve
 ```
 
 Then open [http://localhost:3000/?harness=1](http://localhost:3000/?harness=1).
@@ -109,4 +109,16 @@ Rooms are cleaned up automatically in MongoDB. Waiting rooms expire after 24
 hours, active tournaments after 7 days, and finished tournaments after 24
 hours. MongoDB's TTL index performs the background cleanup, while API reads
 also remove expired legacy room records.
+
+## Deploy on Render
+
+The repository includes `render.yaml` for a Render Node web service. Render
+uses the checked-in pnpm lockfile, runs `pnpm install --frozen-lockfile` and
+`pnpm run build`, then starts the Express server with `pnpm run serve`.
+Node.js 22.15.0 is configured for the service because Vite 7 requires Node.js
+20.19 or newer.
+
+Set `MONGODB_URI` in the Render environment before using room creation or
+joining. `MONGODB_DB` defaults to `strikers`. The server listens on Render's
+`PORT` automatically.
 

@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: strikers-tournament-simulator
+    runtime: node
+    plan: free
+    buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm run build
+    startCommand: corepack pnpm run serve
+    healthCheckPath: /
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: strikers

@@ -17,7 +17,7 @@ pnpm install
 ## Development
 
 ```bash
-pnpm --filter @workspace/strikers-simulator run dev
+pnpm run dev
 ```
 
 Vite starts the development server on port 5173 by default. `PORT` and
@@ -53,8 +53,8 @@ From the repository root, install dependencies and build the frontend:
 
 ```powershell
 corepack pnpm install
-corepack pnpm --filter @workspace/strikers-simulator run typecheck
-corepack pnpm --filter @workspace/strikers-simulator run build
+corepack pnpm run typecheck
+corepack pnpm run build
 ```
 
 For the current PowerShell session, enable the harness with:
@@ -68,7 +68,7 @@ Alternatively, add `ENABLE_TEST_HARNESS=true` to `.env.local` before starting th
 Then start the Vite development server:
 
 ```powershell
-corepack pnpm --filter @workspace/strikers-simulator run dev
+corepack pnpm run dev
 ```
 
 Open [http://localhost:5173/?harness=1](http://localhost:5173/?harness=1).
@@ -76,7 +76,7 @@ Open [http://localhost:5173/?harness=1](http://localhost:5173/?harness=1).
 To run the built version instead:
 
 ```powershell
-corepack pnpm --filter @workspace/strikers-simulator run serve
+corepack pnpm run serve
 ```
 
 Then open [http://localhost:3000/?harness=1](http://localhost:3000/?harness=1).
@@ -95,12 +95,12 @@ The production files are written to `dist/public`.
 To preview the production build locally:
 
 ```bash
-pnpm --filter @workspace/strikers-simulator run serve
+pnpm run serve
 ```
 
 ## Production server
 
-Run the Express server with `pnpm --filter @workspace/strikers-simulator run serve` after building. It serves the
+Run the Express server with `pnpm run serve` after building. It serves the
 compiled browser application and the `/api` routes from the same process.
 Room creation and joining require `MONGODB_URI`; optionally set `MONGODB_DB`.
 Keep these values in the environment and do not commit them.

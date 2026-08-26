@@ -2,11 +2,7 @@ import dotenv from "dotenv";
 import path from "node:path";
 
 for (const envFile of [
-  path.resolve(import.meta.dirname, "../../../.env.local"),
-  path.resolve(process.cwd(), "artifacts/strikers-simulator/.env.local"),
   path.resolve(process.cwd(), ".env.local"),
-  path.resolve(import.meta.dirname, "../../../.env"),
-  path.resolve(process.cwd(), "artifacts/strikers-simulator/.env"),
   path.resolve(process.cwd(), ".env"),
 ]) {
   dotenv.config({ path: envFile });

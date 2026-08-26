@@ -1,11 +1,8 @@
 import express from "express";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import app from "./app";
 
-const workspacePublicDir = path.resolve(process.cwd(), "artifacts/strikers-simulator/dist/public");
-const artifactPublicDir = path.resolve(process.cwd(), "dist/public");
-const publicDir = existsSync(artifactPublicDir) ? artifactPublicDir : workspacePublicDir;
+const publicDir = path.resolve(process.cwd(), "dist/public");
 const port = Number(process.env.PORT || 3000);
 
 app.use(express.static(publicDir));

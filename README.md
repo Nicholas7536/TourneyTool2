@@ -3,7 +3,7 @@
 A minimal React/Vite browser simulator for testing the Strikers Club
 steal-a-player tournament rules.
 
-To learn more about the tournament rules, [click here](TOURNAMENT_RULES.md).
+Inspired by the Blue Lock second selection steal a player stage. For a comprehensive breakdown of the original rules and how they are used in the show, see the [Blue Lock Fandom Wiki]([https://fandom.com](https://bluelock.fandom.com/wiki/Second_Selection:_Rivalry_Battle)). For the precise technical match logic and verbose backend code design, see the local [TOURNAMENT_RULES.md](TOURNAMENT_RULES.md) file.
 
 ## Requirements
 

@@ -116,7 +116,8 @@ The repository includes `render.yaml` for a Render Node web service. Render
 uses the checked-in pnpm lockfile, runs `pnpm install --frozen-lockfile` and
 `pnpm run build`, then starts the Express server with `pnpm run serve`.
 Node.js 22.15.0 is configured for the service because Vite 7 requires Node.js
-20.19 or newer.
+20.19 or newer. The package configuration explicitly permits pnpm to run
+esbuild's required install step during the Render build.
 
 Set `MONGODB_URI` in the Render environment before using room creation or
 joining. `MONGODB_DB` defaults to `strikers`. The server listens on Render's

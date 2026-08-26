@@ -118,6 +118,9 @@ uses the checked-in pnpm lockfile, runs `pnpm install --frozen-lockfile` and
 Node.js 22.15.0 is configured for the service because Vite 7 requires Node.js
 20.19 or newer. The pnpm workspace configuration explicitly permits pnpm to
 run esbuild's required install step during the Render build.
+It also disables pnpm's dependency verification reinstall when the server
+starts, preventing a second install from exceeding Render's free-tier memory
+limit.
 
 Set `MONGODB_URI` in the Render environment before using room creation or
 joining. `MONGODB_DB` defaults to `strikers`. The server listens on Render's

@@ -3,6 +3,8 @@
 A minimal React/Vite browser simulator for testing the Strikers Club
 steal-a-player tournament rules.
 
+To learn more about the tournament rules, [click here](TOURNAMENT_RULES.md).
+
 ## Requirements
 
 - Node.js 20.19 or newer (Render uses Node.js 22.15.0)

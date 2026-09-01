@@ -407,7 +407,7 @@ router.post("/:roomCode/admin/move", async (request, response) => {
       return;
     }
     const destinationTeam = destination === "team" ? room.teams.find((team) => team.id === request.body?.teamId) : undefined;
-    if (destination === "team" && (!destinationTeam || destinationTeam.id === sourceTeam?.id || destinationTeam.playerIds.length >= 5)) {
+    if (destination === "team" && (!destinationTeam || destinationTeam.id === sourceTeam?.id || destinationTeam.playerIds.length > 4)) {
       response.status(400).json({ error: "Choose a valid team with an open roster slot." });
       return;
     }
@@ -444,6 +444,13 @@ router.post("/:roomCode/admin/move", async (request, response) => {
     }
     room.teams = room.teams.filter((team) => team.playerIds.length > 0);
     syncTeamState(room);
+    if (room.finalists.length >= room.rules.maxFinalists) {
+      room.phase = "finished";
+      room.expiresAt = Date.now() + FINISHED_ROOM_TTL_MS;
+    } else if (room.phase === "finished" && room.finalists.length < room.rules.maxFinalists) {
+      room.phase = "active";
+      room.expiresAt = Date.now() + ACTIVE_ROOM_TTL_MS;
+    }
     await saveRoom(room);
     sendRoom(response, room, request);
   } catch (error) {

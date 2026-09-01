@@ -39,7 +39,7 @@ export function publicRoom(room: Room, request: Request) {
     rules: room.rules,
     phase: room.phase,
     players: room.players.map(({ token: _token, ...player }) => player),
-    teams: room.teams.map((team) => ({ ...team, rosterSize: team.playerIds.length })),
+    teams: room.teams.map((team) => ({ ...team, rosterSize: team.playerIds.length, finalist: team.finalist, eliminated: team.eliminated })),
     substitutes: room.substitutes,
     eliminated: room.eliminated,
     challenges: room.challenges,

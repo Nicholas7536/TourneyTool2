@@ -3,23 +3,36 @@ import { type Room, type Team } from "./types.js";
 // ─── Team status ──────────────────────────────────────────────────────────────
 
 export function isEliminated(room: Room, team: Team) {
-  return team.playerIds.length === 1 && (team.eliminated || room.eliminated.includes(team.playerIds[0]));
+  return team.playerIds.length === 1;
 }
 
 export function isFinalist(room: Room, team: Team) {
-  return team.playerIds.length === 5 && (team.finalist || room.finalists.includes(team.id));
+  return team.playerIds.length === 5;
 }
 
 export function syncTeamState(room: Room) {
   for (const team of room.teams) {
     team.rosterSize = team.playerIds.length;
-    team.finalist = isFinalist(room, team);
-    team.eliminated = isEliminated(room, team);
-    if (team.finalist && team.playerIds.length < 5) {
-      team.finalist = false;
+    team.finalist = team.playerIds.length === 5;
+    team.eliminated = team.playerIds.length === 1;
+
+    if (team.finalist) {
+      if (!room.finalists.includes(team.id)) {
+        room.finalists.push(team.id);
+      }
+    } else {
       room.finalists = room.finalists.filter((id) => id !== team.id);
     }
-    if (team.playerIds.length !== 1) team.eliminated = false;
+
+    if (team.eliminated) {
+      if (team.playerIds[0] && !room.eliminated.includes(team.playerIds[0])) {
+        room.eliminated.push(team.playerIds[0]);
+      }
+    } else {
+      if (team.playerIds.length > 1) {
+        room.eliminated = room.eliminated.filter((id) => !team.playerIds.includes(id));
+      }
+    }
   }
 }
 

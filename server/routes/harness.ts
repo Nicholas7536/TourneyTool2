@@ -2,6 +2,7 @@ import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { type Player, type Room, ACTIVE_ROOM_TTL_MS } from "../types.js";
 import { code, token, saveRoom } from "../db.js";
+import { syncTeamState } from "../tournament.js";
 import { validateMaxFinalists, validateMatchmakingPolicy, publicRoom } from "../helpers.js";
 
 const router = Router();
@@ -68,6 +69,7 @@ router.post("/rooms", async (request, response) => {
       team.leadPlayerId ??= player.id;
       room.players.push(player);
     }
+    syncTeamState(room);
     await saveRoom(room);
     response.status(201).json({
       room: publicRoom(room, request),

@@ -90,6 +90,10 @@ const POLICY_LABELS: Record<Policy, string> = {
   nearest: "Nearest roster size",
 };
 
+function cx(...classes: (string | false | null | undefined)[]) {
+  return classes.filter(Boolean).join(" ");
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -303,12 +307,10 @@ function TournamentApp() {
     setError("");
     try {
       await request(path, { method: "POST", body: JSON.stringify(body ?? {}) }, playerToken || hostToken);
-      await loadRoom();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "Action failed";
-      setError(message);
-      await loadRoom();
+      setError(cause instanceof Error ? cause.message : "Action failed");
     } finally {
+      await loadRoom();
       setBusy(false);
     }
   }
@@ -424,7 +426,7 @@ function TournamentApp() {
             <h2>{room.phase === "finished" ? "Finalists" : "Tournament board"}</h2>
             <div className="team-grid">
               {room.teams.map((team) => (
-                <div className={`team ${team.finalist ? "finalist" : ""} ${team.eliminated ? "eliminated" : ""}`} key={team.id}>
+                <div className={cx("team", team.finalist && "finalist", team.eliminated && "eliminated")} key={team.id}>
                   <strong>{team.name}</strong>
                   <span>{team.rosterSize} players</span>
                   <small>{team.finalist ? "finalist" : team.eliminated ? "eliminated" : team.id === viewer?.teamId ? "your team" : "active"}</small>
@@ -493,31 +495,112 @@ function CurrentWindowNotifier({ room }: { room: Room }) {
 }
 
 function JoinQueueForm({ onJoin, playerName, setPlayerName, busy }: { onJoin: (event: FormEvent<HTMLFormElement>) => void; playerName: string; setPlayerName: (value: string) => void; busy: boolean }) {
-  return <section className="panel"><h2>Join this tournament</h2><p className="note">You will join the substitute queue and can be assigned by the room creator.</p><form onSubmit={onJoin} className="join-row"><input placeholder="Display name" value={playerName} onChange={(event) => setPlayerName(event.target.value)} /><button className="primary" disabled={busy || !playerName.trim()}>Join</button></form></section>;
+  return (
+    <section className="panel">
+      <h2>Join this tournament</h2>
+      <p className="note">You will join the substitute queue and can be assigned by the room creator.</p>
+      <form onSubmit={onJoin} className="join-row">
+        <input placeholder="Display name" value={playerName} onChange={(event) => setPlayerName(event.target.value)} />
+        <button className="primary" disabled={busy || !playerName.trim()}>Join</button>
+      </form>
+    </section>
+  );
 }
 
 function AdminPanel({ room, busy, onAction }: { room: Room; busy: boolean; onAction: (path: string, body?: unknown) => void }) {
   const eliminated = room.eliminated ?? [];
   const name = (id: string) => room.players.find((player) => player.id === id)?.name ?? id;
   const status = (team: Team) => team.finalist ? "finalist" : team.eliminated ? "eliminated" : team.rosterSize === 1 ? "eliminated" : "active";
-  return <section className="panel admin-panel">
-    <div className="section-heading"><div><h2>Admin panel</h2><p className="note">Room creator controls · {room.phase}</p></div><span>{room.players.length} players</span></div>
-    <h3>Players and destinations</h3>
-    {room.players.map((player) => <div className="row admin-player" key={player.id}>
-      <span><strong>{player.name}</strong><small>{player.teamId ? teamName(room, player.teamId) : player.substitute ? "substitute queue" : eliminated.includes(player.id) ? "eliminated" : "unassigned"}</small></span>
-      <div className="actions"><select id={`admin-destination-${player.id}`} defaultValue={player.teamId ? `team:${player.teamId}` : player.substitute ? "substitute" : "eliminated"}>
-        {room.teams.map((team) => <option value={`team:${team.id}`} key={team.id}>{team.name} ({status(team)})</option>)}
-        <option value="substitute">Sub list</option><option value="eliminated">Eliminated</option>
-      </select><button disabled={busy} onClick={() => { const value = (document.getElementById(`admin-destination-${player.id}`) as HTMLSelectElement).value; const [kind, teamId] = value.split(":"); onAction(`/rooms/${room.roomCode}/admin/move`, { playerId: player.id, destination: kind, teamId }); }}>Move</button><button disabled={busy} onClick={() => onAction(`/rooms/${room.roomCode}/admin/kick`, { playerId: player.id })}>Kick</button></div>
-    </div>)}
-    <h3>Teams</h3>
-    <div className="team-grid">{room.teams.map((team) => <div className="team" key={team.id}><strong>{team.name}</strong><span>{team.rosterSize} players</span><small>{status(team)}</small>{team.playerIds.map((id) => <span className="player" key={id}>{name(id)}</span>)}</div>)}</div>
-    <h3>Matches</h3>
-    {room.challenges.filter((challenge) => challenge.status === "pending").map((challenge) => <div className="row" key={challenge.id}><span>Pending: {teamName(room, challenge.fromTeamId)} vs {teamName(room, challenge.toTeamId)}</span><small>awaiting acceptance</small></div>)}
-    {room.matches.filter((match) => match.status === "lobby").map((match) => <div className="row" key={match.id}><span>{teamName(room, match.teamAId)} vs {teamName(room, match.teamBId)}</span><button disabled={busy} onClick={() => onAction(`/rooms/${room.roomCode}/matches/${match.id}/void`)}>Void match</button></div>)}
-    {!room.matches.some((match) => match.status === "lobby") && !room.challenges.some((challenge) => challenge.status === "pending") ? <p className="note">No active or pending matches.</p> : null}
-    {room.phase === "finished" ? <p className="note">Final standings: {room.finalists.map((id) => teamName(room, id)).join(", ") || "No finalists"}.</p> : null}
-  </section>;
+
+  const defaultDestination = (player: Player) =>
+    player.teamId ? `team:${player.teamId}` : player.substitute ? "substitute" : "eliminated";
+
+  const [destinations, setDestinations] = useState<Record<string, string>>(() =>
+    Object.fromEntries(room.players.map((p) => [p.id, defaultDestination(p)]))
+  );
+
+  function handleMove(player: Player) {
+    const value = destinations[player.id] ?? defaultDestination(player);
+    const [kind, teamId] = value.split(":");
+    onAction(`/rooms/${room.roomCode}/admin/move`, { playerId: player.id, destination: kind, teamId });
+  }
+
+  return (
+    <section className="panel admin-panel">
+      <div className="section-heading">
+        <div>
+          <h2>Admin panel</h2>
+          <p className="note">Room creator controls · {room.phase}</p>
+        </div>
+        <span>{room.players.length} players</span>
+      </div>
+      <h3>Players and destinations</h3>
+      {room.players.map((player) => (
+        <div className="row admin-player" key={player.id}>
+          <span>
+            <strong>{player.name}</strong>
+            <small>
+              {player.teamId
+                ? teamName(room, player.teamId)
+                : player.substitute
+                  ? "substitute queue"
+                  : eliminated.includes(player.id)
+                    ? "eliminated"
+                    : "unassigned"}
+            </small>
+          </span>
+          <div className="actions">
+            <select
+              value={destinations[player.id] ?? defaultDestination(player)}
+              onChange={(event) => setDestinations((prev) => ({ ...prev, [player.id]: event.target.value }))}
+            >
+              {room.teams.map((team) => (
+                <option value={`team:${team.id}`} key={team.id}>{team.name} ({status(team)})</option>
+              ))}
+              <option value="substitute">Sub list</option>
+              <option value="eliminated">Eliminated</option>
+            </select>
+            <button disabled={busy} onClick={() => handleMove(player)}>Move</button>
+            <button disabled={busy} onClick={() => onAction(`/rooms/${room.roomCode}/admin/kick`, { playerId: player.id })}>Kick</button>
+          </div>
+        </div>
+      ))}
+      <h3>Teams</h3>
+      <div className="team-grid">
+        {room.teams.map((team) => (
+          <div className="team" key={team.id}>
+            <strong>{team.name}</strong>
+            <span>{team.rosterSize} players</span>
+            <small>{status(team)}</small>
+            {team.playerIds.map((id) => <span className="player" key={id}>{name(id)}</span>)}
+          </div>
+        ))}
+      </div>
+      <h3>Matches</h3>
+      {room.challenges
+        .filter((challenge) => challenge.status === "pending")
+        .map((challenge) => (
+          <div className="row" key={challenge.id}>
+            <span>Pending: {teamName(room, challenge.fromTeamId)} vs {teamName(room, challenge.toTeamId)}</span>
+            <small>awaiting acceptance</small>
+          </div>
+        ))}
+      {room.matches
+        .filter((match) => match.status === "lobby")
+        .map((match) => (
+          <div className="row" key={match.id}>
+            <span>{teamName(room, match.teamAId)} vs {teamName(room, match.teamBId)}</span>
+            <button disabled={busy} onClick={() => onAction(`/rooms/${room.roomCode}/matches/${match.id}/void`)}>Void match</button>
+          </div>
+        ))}
+      {!room.matches.some((m) => m.status === "lobby") && !room.challenges.some((c) => c.status === "pending")
+        ? <p className="note">No active or pending matches.</p>
+        : null}
+      {room.phase === "finished"
+        ? <p className="note">Final standings: {room.finalists.map((id) => teamName(room, id)).join(", ") || "No finalists"}.</p>
+        : null}
+    </section>
+  );
 }
 
 function RulesForm({ rules, setRules }: { rules: Rules; setRules: (rules: Rules) => void }) {
@@ -656,26 +739,6 @@ function MatchPanel({ room, match, viewer, busy, onAction }: { room: Room; match
           {reportError ? <p className="error">{reportError}</p> : null}
         </form>
       ) : <p className="note">Team leads report the winner and stolen player after the lobby match.</p>}
-    </section>
-  );
-}
-
-function SubstitutionPanel({ room, viewer, busy, onAction }: { room: Room; viewer: Room["viewer"] | undefined; busy: boolean; onAction: (path: string, body?: unknown) => void }) {
-  const teams = room.teams.filter((team) => !team.finalist && !team.eliminated && (viewer?.role === "host" || team.id === viewer?.teamId));
-  const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
-  const team = teams.find((item) => item.id === teamId) ?? teams[0];
-  const [playerId, setPlayerId] = useState(team?.playerIds[0] ?? "");
-  const [substituteId, setSubstituteId] = useState(room.substitutes[0] ?? "");
-  if (!teams.length || !room.substitutes.length) return null;
-  return (
-    <section className="panel">
-      <h2>Replace a missing player</h2>
-      <form className="form-grid" onSubmit={(event) => { event.preventDefault(); onAction(`/rooms/${room.roomCode}/replace`, { teamId: team?.id, playerId, substituteId }); }}>
-        <label>Team<select value={team?.id} onChange={(event) => { setTeamId(event.target.value); setPlayerId(teams.find((item) => item.id === event.target.value)?.playerIds[0] ?? ""); }}>{teams.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-        <label>Missing player<select value={playerId} onChange={(event) => setPlayerId(event.target.value)}>{team?.playerIds.map((id) => <option value={id} key={id}>{room.players.find((player) => player.id === id)?.name}</option>)}</select></label>
-        <label>Substitute<select value={substituteId} onChange={(event) => setSubstituteId(event.target.value)}>{room.substitutes.map((id) => <option value={id} key={id}>{room.players.find((player) => player.id === id)?.name}</option>)}</select></label>
-        <button className="primary" disabled={busy}>Make replacement</button>
-      </form>
     </section>
   );
 }

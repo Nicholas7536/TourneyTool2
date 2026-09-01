@@ -13,10 +13,10 @@ Minimal React/Vite simulator for the Strikers Club steal-a-player tournament.
 ## Quick start
 
 - Requires Node.js 20.19+ and pnpm 10+.
-- Install: `pnpm install`
-- Develop: `pnpm run dev`
-- Verify: `pnpm run typecheck` and `pnpm run build`
-- Preview/production server: `pnpm run serve`
+- Install: `corepack pnpm install`
+- Develop: `corepack pnpm run dev`
+- Verify: `corepack pnpm run typecheck` and `corepackpnpm run build`
+- Preview/production server: `corepack pnpm run serve`
 
 ## Environment
 
@@ -27,4 +27,4 @@ Never commit credentials. The manual harness also requires
 ## Additional context
 
 - [tournament.md](TOURNAMENT_RULES.md): tournament rules and invariants.
-- [testingharness.md](.agents/testing-harness.md): manual multiplayer harness.
+- [testingharness.md](testing-harness.md): manual multiplayer harness.

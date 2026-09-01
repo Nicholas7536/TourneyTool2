@@ -40,7 +40,7 @@ type Match = {
   teamAId: string;
   teamBId: string;
   lobbyMakerTeamId: string;
-  status: "lobby" | "reported";
+  status: "lobby" | "reported" | "voided";
   emergency?: boolean;
   goldenGoal?: boolean;
   stolenPlayerIds?: string[];
@@ -56,6 +56,7 @@ type Room = {
   players: Player[];
   teams: Team[];
   substitutes: string[];
+  eliminated: string[];
   challenges: Challenge[];
   matches: Match[];
   finalists: string[];
@@ -82,7 +83,7 @@ type HarnessSetup = {
   sessions: HarnessSession[];
 };
 
-const PLAYER_POOLS = [15, 18, 21, 24, 27, 30];
+const PLAYER_POOLS = [15, 18, 21, 27, 30];
 const POLICY_LABELS: Record<Policy, string> = {
   strict: "Same roster size only",
   "strict-emergency": "Same size, then emergency",
@@ -171,6 +172,15 @@ function TestHarness() {
     window.open(url.toString(), `strikers-test-${session.playerId}`);
   }
 
+  function openAdminView() {
+    if (!setup) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("harness");
+    url.searchParams.set("room", setup.room.roomCode);
+    url.searchParams.set("testToken", setup.hostToken);
+    window.open(url.toString(), `strikers-admin-${setup.room.roomCode}`);
+  }
+
   if (enabled === null) return <main className="app narrow"><p className="note">Checking test harness availability...</p></main>;
   if (!enabled) return <main className="app narrow"><section className="panel"><h1>Test harness disabled</h1><p className="note">Set ENABLE_TEST_HARNESS=true in the development environment and restart the server.</p></section></main>;
 
@@ -183,7 +193,8 @@ function TestHarness() {
       <section className="panel">
         <p className="note">The harness creates the room and isolated sessions. You perform all tournament actions manually in the player windows.</p>
         <button className="primary" onClick={createTestRoom} disabled={busy}>{busy ? "Creating..." : "Create fresh 15-player room"}</button>
-        {setup ? <><span className="harness-room">Room <strong>{setup.room.roomCode}</strong> · {setup.room.phase}</span><button className="secondary" onClick={() => setup.sessions.forEach(openSession)}>Open all player sessions</button></> : null}
+        {setup ? <button className="secondary" onClick={openAdminView}>Open admin view</button> : null}
+        {setup ? <span className="harness-room">Room <strong>{setup.room.roomCode}</strong> · {setup.room.phase}</span> : null}
       </section>
       {error ? <p className="error">{error}</p> : null}
       {setup ? <section className="harness-grid">{setup.sessions.map((session) => {
@@ -212,7 +223,7 @@ function TournamentApp() {
   const [playerToken, setPlayerToken] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [rules, setRules] = useState<Rules>({
-    startingPlayers: 24,
+    startingPlayers: 27,
     maxFinalists: 2,
     matchmakingPolicy: "strict-emergency",
   });
@@ -388,6 +399,8 @@ function TournamentApp() {
 
       <CurrentWindowNotifier room={room} />
 
+      {viewer?.role === "host" ? <AdminPanel room={room} busy={busy} onAction={roomAction} /> : null}
+
       {viewer?.role === "host" && room.phase === "waiting" ? (
         <section className="panel">
           <h2>Host rules</h2>
@@ -395,10 +408,10 @@ function TournamentApp() {
           <button className="secondary" disabled={busy} onClick={() => roomAction("/rooms/" + room.roomCode + "/rules", rules)}>
             Save rules
           </button>
-          <button className="primary" disabled={busy || room.teams.some((team) => team.playerIds.length < 3)} onClick={() => roomAction("/rooms/" + room.roomCode + "/start")}>
+          <button className="primary" disabled={busy || room.players.length !== room.rules.startingPlayers || room.substitutes.length > 0 || room.teams.some((team) => team.playerIds.length !== 3)} onClick={() => roomAction("/rooms/" + room.roomCode + "/start")}>
             Start tournament
           </button>
-          <p className="note">Every starting team must have 3 players. Extra players wait in the substitute queue.</p>
+          <p className="note">Start requires exactly the selected valid population, with every team complete and no substitutes waiting.</p>
         </section>
       ) : null}
 
@@ -406,6 +419,7 @@ function TournamentApp() {
         <WaitingRoom room={room} viewer={viewer} onJoin={joinRoom} playerName={playerName} setPlayerName={setPlayerName} busy={busy} />
       ) : (
         <>
+          {!viewer?.playerId && viewer?.role !== "host" ? <JoinQueueForm onJoin={joinRoom} playerName={playerName} setPlayerName={setPlayerName} busy={busy} /> : null}
           <section className="panel">
             <h2>{room.phase === "finished" ? "Finalists" : "Tournament board"}</h2>
             <div className="team-grid">
@@ -440,13 +454,11 @@ function TournamentApp() {
           {activeMatches.map((match) => (
             <MatchPanel key={match.id} room={room} match={match} viewer={viewer} busy={busy} onAction={roomAction} />
           ))}
-          {room.phase === "active" && (viewer?.role === "host" || viewer?.isLead) ? (
-            <SubstitutionPanel room={room} viewer={viewer} busy={busy} onAction={roomAction} />
-          ) : null}
           <section className="panel">
             <h2>Substitute queue</h2>
             {room.substitutes.length ? room.substitutes.map((id) => <p key={id}>{room.players.find((player) => player.id === id)?.name}</p>) : <p className="note">No substitutes waiting.</p>}
           </section>
+          {room.eliminated.length ? <section className="panel"><h2>Eliminated players</h2>{room.eliminated.map((id) => <p key={id}>{room.players.find((player) => player.id === id)?.name}</p>)}</section> : null}
         </>
       )}
       {error ? <p className="error">{error}</p> : null}
@@ -478,6 +490,34 @@ function CurrentWindowNotifier({ room }: { room: Room }) {
       {team ? <p className="note">Your team: {teamPlayers.join(", ")} · {team.rosterSize} players</p> : <p className="note">This window is not assigned to a team.</p>}
     </section>
   );
+}
+
+function JoinQueueForm({ onJoin, playerName, setPlayerName, busy }: { onJoin: (event: FormEvent<HTMLFormElement>) => void; playerName: string; setPlayerName: (value: string) => void; busy: boolean }) {
+  return <section className="panel"><h2>Join this tournament</h2><p className="note">You will join the substitute queue and can be assigned by the room creator.</p><form onSubmit={onJoin} className="join-row"><input placeholder="Display name" value={playerName} onChange={(event) => setPlayerName(event.target.value)} /><button className="primary" disabled={busy || !playerName.trim()}>Join</button></form></section>;
+}
+
+function AdminPanel({ room, busy, onAction }: { room: Room; busy: boolean; onAction: (path: string, body?: unknown) => void }) {
+  const eliminated = room.eliminated ?? [];
+  const name = (id: string) => room.players.find((player) => player.id === id)?.name ?? id;
+  const status = (team: Team) => team.finalist ? "finalist" : team.eliminated ? "eliminated" : team.rosterSize === 1 ? "eliminated" : "active";
+  return <section className="panel admin-panel">
+    <div className="section-heading"><div><h2>Admin panel</h2><p className="note">Room creator controls · {room.phase}</p></div><span>{room.players.length} players</span></div>
+    <h3>Players and destinations</h3>
+    {room.players.map((player) => <div className="row admin-player" key={player.id}>
+      <span><strong>{player.name}</strong><small>{player.teamId ? teamName(room, player.teamId) : player.substitute ? "substitute queue" : eliminated.includes(player.id) ? "eliminated" : "unassigned"}</small></span>
+      <div className="actions"><select id={`admin-destination-${player.id}`} defaultValue={player.teamId ? `team:${player.teamId}` : player.substitute ? "substitute" : "eliminated"}>
+        {room.teams.map((team) => <option value={`team:${team.id}`} key={team.id}>{team.name} ({status(team)})</option>)}
+        <option value="substitute">Sub list</option><option value="eliminated">Eliminated</option>
+      </select><button disabled={busy} onClick={() => { const value = (document.getElementById(`admin-destination-${player.id}`) as HTMLSelectElement).value; const [kind, teamId] = value.split(":"); onAction(`/rooms/${room.roomCode}/admin/move`, { playerId: player.id, destination: kind, teamId }); }}>Move</button><button disabled={busy} onClick={() => onAction(`/rooms/${room.roomCode}/admin/kick`, { playerId: player.id })}>Kick</button></div>
+    </div>)}
+    <h3>Teams</h3>
+    <div className="team-grid">{room.teams.map((team) => <div className="team" key={team.id}><strong>{team.name}</strong><span>{team.rosterSize} players</span><small>{status(team)}</small>{team.playerIds.map((id) => <span className="player" key={id}>{name(id)}</span>)}</div>)}</div>
+    <h3>Matches</h3>
+    {room.challenges.filter((challenge) => challenge.status === "pending").map((challenge) => <div className="row" key={challenge.id}><span>Pending: {teamName(room, challenge.fromTeamId)} vs {teamName(room, challenge.toTeamId)}</span><small>awaiting acceptance</small></div>)}
+    {room.matches.filter((match) => match.status === "lobby").map((match) => <div className="row" key={match.id}><span>{teamName(room, match.teamAId)} vs {teamName(room, match.teamBId)}</span><button disabled={busy} onClick={() => onAction(`/rooms/${room.roomCode}/matches/${match.id}/void`)}>Void match</button></div>)}
+    {!room.matches.some((match) => match.status === "lobby") && !room.challenges.some((challenge) => challenge.status === "pending") ? <p className="note">No active or pending matches.</p> : null}
+    {room.phase === "finished" ? <p className="note">Final standings: {room.finalists.map((id) => teamName(room, id)).join(", ") || "No finalists"}.</p> : null}
+  </section>;
 }
 
 function RulesForm({ rules, setRules }: { rules: Rules; setRules: (rules: Rules) => void }) {

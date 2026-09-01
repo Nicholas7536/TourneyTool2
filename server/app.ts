@@ -17,8 +17,8 @@ type Phase = "waiting" | "active" | "finished";
 type Player = { id: string; name: string; token: string; teamId: string | null; substitute: boolean };
 type Team = { id: string; name: string; leadPlayerId: string | null; playerIds: string[]; rosterSize: number; finalist: boolean; eliminated: boolean };
 type Challenge = { id: string; fromTeamId: string; toTeamId: string; status: "pending" | "accepted" | "reported" | "declined"; matchId?: string };
-type Match = { id: string; challengeId: string; teamAId: string; teamBId: string; lobbyMakerTeamId: string; status: "lobby" | "reported"; emergency?: boolean; goldenGoal?: boolean; winnerTeamId?: string; loserTeamId?: string; stolenPlayerId?: string; stolenPlayerIds?: string[] };
-type Room = { roomCode: string; hostToken: string; rules: { startingPlayers: number; maxFinalists: number; matchmakingPolicy: Policy }; phase: Phase; players: Player[]; teams: Team[]; substitutes: string[]; challenges: Challenge[]; matches: Match[]; finalists: string[]; createdAt: number; expiresAt: number };
+type Match = { id: string; challengeId: string; teamAId: string; teamBId: string; lobbyMakerTeamId: string; status: "lobby" | "reported" | "voided"; emergency?: boolean; goldenGoal?: boolean; winnerTeamId?: string; loserTeamId?: string; stolenPlayerId?: string; stolenPlayerIds?: string[] };
+type Room = { roomCode: string; hostToken: string; rules: { startingPlayers: number; maxFinalists: number; matchmakingPolicy: Policy }; phase: Phase; players: Player[]; teams: Team[]; substitutes: string[]; eliminated: string[]; challenges: Challenge[]; matches: Match[]; finalists: string[]; createdAt: number; expiresAt: number };
 
 const WAITING_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -87,8 +87,9 @@ function publicRoom(room: Room, request: Request) {
     rules: room.rules,
     phase: room.phase,
     players: room.players.map(({ token: _token, ...player }) => player),
-    teams: room.teams,
+    teams: room.teams.map((team) => ({ ...team, rosterSize: team.playerIds.length, finalist: isFinalist(room, team), eliminated: isEliminated(room, team) })),
     substitutes: room.substitutes,
+    eliminated: room.eliminated ?? [],
     challenges: room.challenges,
     matches: room.matches,
     finalists: room.finalists,
@@ -134,6 +135,29 @@ function currentPlayer(room: Room, request: Request) {
 
 function teamInMatch(room: Room, teamId: string) {
   return room.matches.some((match) => match.status === "lobby" && [match.teamAId, match.teamBId].includes(teamId));
+}
+
+function isEliminated(room: Room, team: Team) {
+  return team.playerIds.length === 1 && (team.eliminated || (room.eliminated ?? []).includes(team.playerIds[0]));
+}
+
+function isFinalist(room: Room, team: Team) {
+  return team.playerIds.length === 5 && (team.finalist || room.finalists.includes(team.id));
+}
+
+function syncTeamState(room: Room) {
+  room.eliminated ??= [];
+  for (const team of room.teams) {
+    if (team.playerIds.length < 5) room.finalists = room.finalists.filter((id) => id !== team.id);
+    team.rosterSize = team.playerIds.length;
+    team.finalist = isFinalist(room, team);
+    team.eliminated = isEliminated(room, team);
+    if (team.playerIds.length < 5 && team.finalist) {
+      team.finalist = false;
+      room.finalists = room.finalists.filter((id) => id !== team.id);
+    }
+    if (team.playerIds.length !== 1) team.eliminated = false;
+  }
 }
 
 function availableTeams(room: Room) {
@@ -223,6 +247,7 @@ app.post("/api/test-harness/rooms", async (request, response) => {
       players: [],
       teams: Array.from({ length: 5 }, (_, index) => ({ id: `team-${index + 1}`, name: `Team ${String.fromCharCode(65 + index)}`, leadPlayerId: null, playerIds: [], rosterSize: 3, finalist: false, eliminated: false })),
       substitutes: [],
+      eliminated: [],
       challenges: [],
       matches: [],
       finalists: [],
@@ -240,6 +265,7 @@ app.post("/api/test-harness/rooms", async (request, response) => {
     await saveRoom(room);
     response.status(201).json({
       room: publicRoom(room, request),
+      hostToken: room.hostToken,
       sessions: room.players.map((player) => ({
         playerId: player.id,
         name: player.name,
@@ -257,8 +283,8 @@ app.post("/api/test-harness/rooms", async (request, response) => {
 
 app.post("/api/rooms", async (request, response) => {
   try {
-    const { startingPlayers = 24, maxFinalists = 2, matchmakingPolicy = "strict-emergency" } = request.body ?? {};
-    if (![15, 18, 21, 24, 27, 30].includes(Number(startingPlayers))) return response.status(400).json({ error: "Starting players must be 15, 18, 21, 24, 27, or 30." });
+    const { startingPlayers = 27, maxFinalists = 2, matchmakingPolicy = "strict-emergency" } = request.body ?? {};
+    if (![15, 18, 21, 27, 30].includes(Number(startingPlayers))) return response.status(400).json({ error: "Starting players must be 15, 18, 21, 27, or 30." });
     if (!Number.isInteger(Number(maxFinalists)) || Number(maxFinalists) < 1 || Number(maxFinalists) > 5) return response.status(400).json({ error: "Maximum finalists must be between 1 and 5." });
     if (!["strict", "strict-emergency", "nearest"].includes(matchmakingPolicy)) return response.status(400).json({ error: "Invalid matchmaking policy." });
     const room: Room = {
@@ -269,6 +295,7 @@ app.post("/api/rooms", async (request, response) => {
       players: [],
       teams: Array.from({ length: Number(startingPlayers) / 3 }, (_, index) => ({ id: `team-${index + 1}`, name: `Team ${String.fromCharCode(65 + index)}`, leadPlayerId: null, playerIds: [], rosterSize: 0, finalist: false, eliminated: false })),
       substitutes: [],
+      eliminated: [],
       challenges: [],
       matches: [],
       finalists: [],
@@ -298,12 +325,11 @@ app.post("/api/rooms/:roomCode/join", async (request, response) => {
   try {
     const room = await findRoom(request.params.roomCode.toUpperCase());
     if (!room) return response.status(404).json({ error: "Tournament room not found." });
-    if (room.phase !== "waiting") return response.status(409).json({ error: "This tournament has already started." });
     const name = String(request.body?.name ?? "").trim().slice(0, 40);
     if (!name) return response.status(400).json({ error: "Enter a display name." });
     const playerToken = token();
     const player: Player = { id: `player-${randomUUID()}`, name, token: playerToken, teamId: null, substitute: false };
-    const openTeam = room.teams.find((team) => team.playerIds.length < 3);
+    const openTeam = room.phase === "waiting" ? room.teams.find((team) => team.playerIds.length < 3) : undefined;
     if (openTeam) {
       openTeam.playerIds.push(player.id);
       openTeam.rosterSize = openTeam.playerIds.length;
@@ -328,7 +354,7 @@ app.post("/api/rooms/:roomCode/start", async (request, response) => {
     if (!room) return response.status(404).json({ error: "Tournament room not found." });
     if (!requireHost(room, request, response)) return;
     if (room.phase !== "waiting") return response.status(409).json({ error: "This tournament is not waiting to start." });
-    if (room.teams.some((team) => team.playerIds.length !== 3)) return response.status(409).json({ error: "Every starting team needs 3 players before starting." });
+    if (![15, 18, 21, 27, 30].includes(room.players.length) || room.players.length !== room.rules.startingPlayers || room.substitutes.length || room.teams.some((team) => team.playerIds.length !== 3)) return response.status(409).json({ error: "The room must contain a valid complete starting population (15, 18, 21, 27, or 30 players)." });
     room.phase = "active";
     room.expiresAt = Date.now() + ACTIVE_ROOM_TTL_MS;
     await saveRoom(room);
@@ -379,6 +405,106 @@ app.post("/api/rooms/:roomCode/challenges", async (request, response) => {
   return undefined;
 });
 
+app.post("/api/rooms/:roomCode/admin/move", async (request, response) => {
+  try {
+    const room = await findRoom(request.params.roomCode.toUpperCase());
+    if (!room) return response.status(404).json({ error: "Tournament room not found." });
+    if (!requireHost(room, request, response)) return;
+    room.eliminated ??= [];
+    const player = room.players.find((item) => item.id === request.body?.playerId);
+    const destination = String(request.body?.destination ?? "");
+    if (!player || !["team", "substitute", "eliminated"].includes(destination)) return response.status(400).json({ error: "Choose a valid player and destination." });
+    const sourceTeam = player.teamId ? room.teams.find((team) => team.id === player.teamId) : room.teams.find((team) => team.playerIds.includes(player.id));
+    if (sourceTeam && player.teamId && sourceTeam.playerIds.length <= 1) return response.status(409).json({ error: "A team’s last player cannot be moved by this action." });
+    const destinationTeam = destination === "team" ? room.teams.find((team) => team.id === request.body?.teamId) : undefined;
+    if (destination === "team" && (!destinationTeam || destinationTeam.id === sourceTeam?.id || destinationTeam.playerIds.length >= 5)) return response.status(400).json({ error: "Choose a valid team with an open roster slot." });
+    room.substitutes = room.substitutes.filter((id) => id !== player.id);
+    room.eliminated = room.eliminated.filter((id) => id !== player.id);
+    if (sourceTeam) {
+      sourceTeam.playerIds = sourceTeam.playerIds.filter((id) => id !== player.id);
+      if (sourceTeam.leadPlayerId === player.id) sourceTeam.leadPlayerId = sourceTeam.playerIds[0] ?? null;
+    }
+    if (destination === "team" && destinationTeam) {
+      destinationTeam.playerIds.push(player.id);
+      destinationTeam.leadPlayerId ??= player.id;
+      player.teamId = destinationTeam.id;
+      player.substitute = false;
+      const revived = destinationTeam.playerIds.find((id) => room.eliminated.includes(id));
+      if (revived) {
+        room.eliminated = room.eliminated.filter((id) => id !== revived);
+        const revivedPlayer = room.players.find((item) => item.id === revived);
+        if (revivedPlayer) revivedPlayer.teamId = destinationTeam.id;
+      }
+    } else {
+      player.teamId = null;
+      player.substitute = destination === "substitute";
+      if (destination === "substitute") room.substitutes.push(player.id);
+      else room.eliminated.push(player.id);
+    }
+    if (sourceTeam && sourceTeam.playerIds.length === 1) {
+      const remaining = room.players.find((item) => item.id === sourceTeam.playerIds[0]);
+      if (remaining) {
+        remaining.teamId = null;
+        remaining.substitute = false;
+        if (!room.eliminated.includes(remaining.id)) room.eliminated.push(remaining.id);
+      }
+    }
+    room.teams = room.teams.filter((team) => team.playerIds.length > 0);
+    syncTeamState(room);
+    await saveRoom(room);
+    sendRoom(response, room, request);
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "Could not move player." });
+  }
+  return undefined;
+});
+
+app.post("/api/rooms/:roomCode/admin/kick", async (request, response) => {
+  try {
+    const room = await findRoom(request.params.roomCode.toUpperCase());
+    if (!room) return response.status(404).json({ error: "Tournament room not found." });
+    if (!requireHost(room, request, response)) return;
+    const player = room.players.find((item) => item.id === request.body?.playerId);
+    if (!player) return response.status(404).json({ error: "Player not found." });
+    const team = player.teamId ? room.teams.find((item) => item.id === player.teamId) : room.teams.find((item) => item.playerIds.includes(player.id));
+    if (team) {
+      team.playerIds = team.playerIds.filter((id) => id !== player.id);
+      if (team.leadPlayerId === player.id) team.leadPlayerId = team.playerIds[0] ?? null;
+    }
+    room.players = room.players.filter((item) => item.id !== player.id);
+    room.substitutes = room.substitutes.filter((id) => id !== player.id);
+    room.eliminated = (room.eliminated ?? []).filter((id) => id !== player.id);
+    room.challenges = room.challenges.filter((challenge) => challenge.fromTeamId !== team?.id && challenge.toTeamId !== team?.id);
+    room.matches = room.matches.map((match) => [match.teamAId, match.teamBId].includes(team?.id ?? "") && match.status === "lobby" ? { ...match, status: "voided" as const } : match);
+    room.teams = room.teams.filter((item) => item.playerIds.length > 0);
+    syncTeamState(room);
+    await saveRoom(room);
+    sendRoom(response, room, request);
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "Could not kick player." });
+  }
+  return undefined;
+});
+
+app.post("/api/rooms/:roomCode/matches/:matchId/void", async (request, response) => {
+  try {
+    const room = await findRoom(request.params.roomCode.toUpperCase());
+    if (!room) return response.status(404).json({ error: "Tournament room not found." });
+    if (!requireHost(room, request, response)) return;
+    const match = room.matches.find((item) => item.id === request.params.matchId);
+    if (!match) return response.status(404).json({ error: "Match not found." });
+    if (match.status !== "lobby") return response.status(409).json({ error: "Only an active match can be voided." });
+    match.status = "voided";
+    const challenge = room.challenges.find((item) => item.id === match.challengeId);
+    if (challenge) challenge.status = "declined";
+    await saveRoom(room);
+    sendRoom(response, room, request);
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "Could not void match." });
+  }
+  return undefined;
+});
+
 app.post("/api/rooms/:roomCode/challenges/:challengeId/cancel", async (request, response) => {
   try {
     const room = await findRoom(request.params.roomCode.toUpperCase());
@@ -402,15 +528,13 @@ app.post("/api/rooms/:roomCode/challenges/:challengeId/cancel", async (request, 
 app.post("/api/rooms/:roomCode/replace", async (request, response) => {
   try {
     const room = await findRoom(request.params.roomCode.toUpperCase());
-    const actor = room && currentPlayer(room, request);
     const team = room?.teams.find((item) => item.id === request.body?.teamId);
     const missingPlayer = room?.players.find((item) => item.id === request.body?.playerId);
     const substitute = room?.players.find((item) => item.id === request.body?.substituteId);
     const isHost = room && request.header("x-room-token") === room.hostToken;
-    const isLead = actor && team?.leadPlayerId === actor.id && actor.teamId === team.id;
     if (!room) return response.status(404).json({ error: "Tournament room not found." });
     if (room.phase !== "waiting" && room.phase !== "active") return response.status(409).json({ error: "This tournament cannot accept substitutions." });
-    if (!isHost && !isLead) return response.status(403).json({ error: "Only the host or team lead can make a replacement." });
+    if (!isHost) return response.status(403).json({ error: "Only the room creator can make a replacement." });
     if (!team || team.finalist || team.eliminated || !missingPlayer || missingPlayer.teamId !== team.id || !substitute || !room.substitutes.includes(substitute.id)) return response.status(400).json({ error: "Choose a valid team player and substitute." });
     team.playerIds = team.playerIds.filter((id) => id !== missingPlayer.id);
     team.playerIds.push(substitute.id);
@@ -489,11 +613,19 @@ app.post("/api/rooms/:roomCode/matches/:matchId/report", async (request, respons
     }
     if (loser.rosterSize <= 1) {
       loser.eliminated = true;
+      room.eliminated ??= [];
       if (match.goldenGoal) {
         loser.playerIds.forEach((id) => {
           const playerToEliminate = room.players.find((item) => item.id === id);
-          if (playerToEliminate) playerToEliminate.teamId = null;
+          if (playerToEliminate) {
+            playerToEliminate.teamId = null;
+            if (!room.eliminated.includes(id)) room.eliminated.push(id);
+          }
         });
+      } else {
+        const eliminatedPlayer = room.players.find((item) => item.id === loser.playerIds[0]);
+        if (eliminatedPlayer) eliminatedPlayer.teamId = null;
+        if (loser.playerIds[0] && !room.eliminated.includes(loser.playerIds[0])) room.eliminated.push(loser.playerIds[0]);
       }
     }
     if (!loser.playerIds.includes(loser.leadPlayerId ?? "")) loser.leadPlayerId = loser.playerIds[0] ?? null;
@@ -508,6 +640,7 @@ app.post("/api/rooms/:roomCode/matches/:matchId/report", async (request, respons
       room.phase = "finished";
       room.expiresAt = Date.now() + FINISHED_ROOM_TTL_MS;
     }
+    syncTeamState(room);
     await saveRoom(room);
     sendRoom(response, room, request);
   } catch (error) {

@@ -12,7 +12,11 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build --config vite.config.ts",
     "serve": "tsx server/index.ts",
     "start": "pnpm run serve",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "playwright test",
+    "test:rules": "playwright test tests/rules.spec.ts",
+    "test:harness": "playwright test tests/harness.spec.ts",
+    "test:inputs": "playwright test tests/inputs.spec.ts"
   },
   "packageManager": "pnpm@11.23.0+sha512.f00082e5b283a199b74e079da28d155c008fe232f44c8a06ea7ddfa014ecf719fc362f790ecc67b28106ddac2afb24c49a9a079159da560b2ce7d1e98efd11af",
   "dependencies": {
@@ -21,11 +25,13 @@
     "mongodb": "^6.20.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/express": "^5.0.3",
     "@types/node": "^25.3.3",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "playwright": "^1.62.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "tsx": "^4.20.6",

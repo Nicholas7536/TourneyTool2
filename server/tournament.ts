@@ -88,12 +88,11 @@ export function isRepeatedPair(room: Room, teamAId: string, teamBId: string) {
     (match) =>
       match.status === "reported" &&
       ((match.teamAId === teamAId && match.teamBId === teamBId) ||
-       (match.teamAId === teamBId && match.teamBId === teamAId)),
+        (match.teamAId === teamBId && match.teamBId === teamAId)),
   );
   if (priorMatches.length < 2) return false;
   const [first, second] = priorMatches.slice(-2);
   const bothHaveWinners = Boolean(first.winnerTeamId && second.winnerTeamId);
   const winnersSwapped = first.winnerTeamId !== second.winnerTeamId;
-  const samePlayerTraded = Boolean(first.stolenPlayerId && first.stolenPlayerId === second.stolenPlayerId);
-  return bothHaveWinners && winnersSwapped && samePlayerTraded;
+  return bothHaveWinners && winnersSwapped;
 }

@@ -18,6 +18,7 @@
 .cache/
 .eslintcache
 .stylelintcache
+/test-results/*
 
 # IDEs and editors
 /.idea

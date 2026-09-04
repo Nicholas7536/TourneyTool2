@@ -28,3 +28,4 @@ Never commit credentials. The manual harness also requires
 
 - [tournament.md](TOURNAMENT_RULES.md): tournament rules and invariants.
 - [testingharness.md](testing-harness.md): manual multiplayer harness.
+- [frontend-testing.md](.agents/workflows/frontend-testing.md): UI development and Playwright verification workflow.

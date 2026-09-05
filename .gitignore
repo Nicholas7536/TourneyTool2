@@ -25,6 +25,8 @@
 /.fleet
 .project
 .classpath
+.vscode
+AGENTS.md
 .c9/
 *.launch
 .settings/
